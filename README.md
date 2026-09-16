@@ -11,6 +11,35 @@ master volume. This is real per-app attenuation, not a relabelled global volume 
   <img src="docs/images/mixer-dark.png" width="330" alt="Mac Volume Mixer panel in dark mode">
 </p>
 
+## Download
+
+Get the latest **`MacVolumeMixer-<version>.dmg`** from the
+[Releases page](https://github.com/almuhannad1/mac-volume-mixer/releases/latest).
+It is a universal app (Apple Silicon and Intel) for **macOS 14.2 or later**.
+
+1. Open the DMG and drag **Mac Volume Mixer** onto **Applications**.
+2. Open it from Applications. The first time, macOS blocks it (see below).
+3. Allow **System Audio Recording** when asked, then click the fader icon in the menu bar.
+
+### First launch: "Apple could not verify…"
+
+Release builds are not notarized (that needs a paid Apple Developer account), so Gatekeeper stops
+the first launch. This happens once:
+
+- **macOS 15 Sequoia and later:** double-click the app, click **Done** on the warning, then open
+  **System Settings → Privacy & Security**, scroll down to *"Mac Volume Mixer" was blocked…* and click
+  **Open Anyway**, then confirm.
+- **macOS 14 Sonoma:** right-click (or Control-click) the app in Applications, choose **Open**, then
+  click **Open** in the dialog.
+
+If you prefer the terminal, this removes the download quarantine flag instead:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Mac Volume Mixer.app"
+```
+
+Each release lists SHA-256 checksums so you can confirm the download is intact
+(`shasum -a 256 MacVolumeMixer-*.dmg`). Prefer to build it yourself? See [Build](#build).
 
 ## How it works, and why that matters
 
@@ -58,7 +87,7 @@ Full analysis, including the ranked alternatives and live API probes run on real
 
 ```bash
 swift build                      # build all targets
-swift test                       # run the unit tests (34 tests)
+swift test                       # run the unit tests (35 tests)
 swift scripts/make-app-icon.swift # regenerate Resources/AppIcon.icns (only if you change the icon)
 scripts/build-app.sh             # produce build/Mac Volume Mixer.app (ad-hoc signed)
 ```
@@ -70,6 +99,12 @@ CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/build-a
 ```
 
 The script adds the hardened runtime and a secure timestamp when a real identity is supplied.
+
+To produce the downloadable packages (universal DMG and zip in `dist/`, with checksums):
+
+```bash
+scripts/package-release.sh
+```
 
 ### Run
 

@@ -4,6 +4,7 @@
 #   scripts/build-app.sh                  # release build, ad-hoc signed
 #   CODESIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh
 #   CONFIGURATION=debug scripts/build-app.sh
+#   UNIVERSAL=1 scripts/build-app.sh      # Apple Silicon + Intel binary
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,9 +12,14 @@ CONFIGURATION="${CONFIGURATION:-release}"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 APP="$ROOT/build/Mac Volume Mixer.app"
 
+ARCH_ARGS=()
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+    ARCH_ARGS=(--arch arm64 --arch x86_64)
+fi
+
 cd "$ROOT"
-swift build -c "$CONFIGURATION" --product MacVolumeMixer
-BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
+swift build -c "$CONFIGURATION" --product MacVolumeMixer "${ARCH_ARGS[@]}"
+BIN_DIR="$(swift build -c "$CONFIGURATION" "${ARCH_ARGS[@]}" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

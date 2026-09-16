@@ -6,9 +6,9 @@
 swift test
 ```
 
-34 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
+35 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
 volume curve, meter scale and ballistics, atomics, app identity resolution (helper → owning app,
-WebKit, daemons), session grouping, tap/visibility policies, activity tracking, search,
+WebKit, daemons), session grouping (including never listing the mixer itself), tap/visibility policies, activity tracking, search,
 persistence (round-trip, pruning, disabled persistence, corrupt data, clamping) and device
 filtering.
 
