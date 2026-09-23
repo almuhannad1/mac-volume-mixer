@@ -1,9 +1,11 @@
 import Foundation
 import os
 
-/// Per-application volume and mute preferences, keyed by `AppIdentity.id` (normally a bundle ID).
+/// Per-application volume, mute and output-routing preferences, keyed by `AppIdentity.id`
+/// (normally a bundle ID).
 ///
-/// Only non-default settings are stored; an app at 100 % unmuted has no entry.
+/// Only apps that differ from stock behaviour are stored; an app at 100 %, unmuted and unrouted
+/// has no entry.
 public final class AppVolumeSettingsStore {
     public static let storageKey = "appVolumeSettings.v1"
 
@@ -34,11 +36,17 @@ public final class AppVolumeSettingsStore {
         settings[appID] ?? .default
     }
 
+    /// The values to apply for `appID` on the given output device. Pass `nil` for `deviceUID`
+    /// when per-device memory is switched off, which uses the app's baseline level.
+    public func effectiveSetting(for appID: String, deviceUID: String?) -> EffectiveAppSetting {
+        setting(for: appID).effective(onDeviceUID: deviceUID)
+    }
+
     public func update(_ appID: String, _ change: (inout AppVolumeSetting) -> Void) {
         var setting = self.setting(for: appID)
         change(&setting)
         guard setting != self.setting(for: appID) else { return }
-        settings[appID] = setting.isDefault ? nil : setting
+        settings[appID] = setting.isStorageDefault ? nil : setting
         save()
     }
 
@@ -66,7 +74,7 @@ public final class AppVolumeSettingsStore {
         guard let data = persistence.data(forKey: storageKey) else { return [:] }
         do {
             return try JSONDecoder().decode([String: AppVolumeSetting].self, from: data)
-                .filter { !$0.value.isDefault }
+                .filter { !$0.value.isStorageDefault }
         } catch {
             logger.error("Discarding unreadable app volume settings: \(error.localizedDescription, privacy: .public)")
             return [:]

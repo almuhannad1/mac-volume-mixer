@@ -30,8 +30,11 @@ struct ApplicationsSectionView: View {
                             item: app,
                             icon: model.icon(for: app),
                             meter: model.meters.level(for: app.id),
+                            outputDevices: model.controller.outputDevices,
                             onVolumeChange: { model.setVolume($0, for: app) },
                             onToggleMute: { model.toggleMute(for: app) },
+                            onToggleSolo: { model.toggleSolo(for: app) },
+                            onRoute: { model.setOutputDevice($0, for: app) },
                             onReset: { model.resetVolume(for: app) }
                         )
                         if app.id != apps.last?.id {

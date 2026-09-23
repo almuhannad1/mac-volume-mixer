@@ -14,11 +14,19 @@ import Observation
 final class MixerController {
     struct AppItem: Identifiable, Equatable {
         let identity: AppIdentity
-        let setting: AppVolumeSetting
+        /// Values for the current output device (see per-device memory).
+        let setting: EffectiveAppSetting
         let isPlaying: Bool
         /// Audio is routed through a tap, so a real level meter is available.
         let isProcessing: Bool
         let failureMessage: String?
+        /// Name of the device this app is pinned to, or `nil` when it follows the system output.
+        let routedDeviceName: String?
+        /// The pinned device is not connected, so the app plays on the system output meanwhile.
+        let isRouteUnavailable: Bool
+        let isSoloed: Bool
+        /// Silenced because another app is soloed.
+        let isSilencedBySolo: Bool
 
         var id: String { identity.id }
     }
@@ -29,6 +37,9 @@ final class MixerController {
     private(set) var masterVolume: Float?
     private(set) var isMasterMuted = false
     private(set) var canMuteMaster = false
+    /// App the user is listening to alone; everything else is silenced. Never persisted, because
+    /// a solo restored at launch would look like broken audio.
+    private(set) var soloedAppID: String?
     private(set) var captureAuthorization: AudioCaptureAuthorization = .unknown
     private(set) var isCheckingCaptureAccess = false
     /// Set by `--disable-taps`: everything except per-app processing works.
@@ -93,27 +104,53 @@ final class MixerController {
     // MARK: - Intents
 
     func setVolume(_ volume: Double, for appID: String) {
+        let deviceUID = perDeviceKey
         settingsStore.update(appID) {
-            $0.setVolume(volume)
-            if volume > 0 { $0.isMuted = false }
+            // Dragging a muted app's slider up unmutes it, as the system volume does.
+            $0.setLevel(volume: volume, isMuted: volume > 0 ? false : nil, forDeviceUID: deviceUID)
         }
         engineFailures[appID] = nil
         reconcile()
     }
 
     func toggleMute(for appID: String) {
-        settingsStore.update(appID) { $0.isMuted.toggle() }
+        let deviceUID = perDeviceKey
+        let isMuted = settingsStore.effectiveSetting(for: appID, deviceUID: deviceUID).isMuted
+        settingsStore.update(appID) { $0.setLevel(isMuted: !isMuted, forDeviceUID: deviceUID) }
         engineFailures[appID] = nil
         reconcile()
     }
 
+    /// Pins an app to one output device, or passes `nil` to follow the system output again.
+    func setOutputDevice(_ deviceUID: String?, for appID: String) {
+        let name = deviceUID.flatMap { uid in outputDevices.first { $0.uid == uid }?.name }
+        settingsStore.update(appID) { $0.setRoute(deviceUID: deviceUID, deviceName: name) }
+        engineFailures[appID] = nil
+        reconcile()
+    }
+
+    /// Hear one app alone. Toggling the same app, or soloing another, replaces the current solo.
+    func toggleSolo(for appID: String) {
+        soloedAppID = soloedAppID == appID ? nil : appID
+        reconcile()
+    }
+
+    func clearSolo() {
+        guard soloedAppID != nil else { return }
+        soloedAppID = nil
+        reconcile()
+    }
+
+    /// Clears this app's level, mute and routing on every device.
     func resetVolume(for appID: String) {
         settingsStore.update(appID) { $0 = .default }
+        if soloedAppID == appID { soloedAppID = nil }
         reconcile()
     }
 
     func resetAllVolumes() {
         settingsStore.removeAll()
+        soloedAppID = nil
         reconcile()
     }
 
@@ -214,6 +251,7 @@ final class MixerController {
         observeContinuously { [weak self] in
             _ = self?.preferences.rememberAppVolumes
             _ = self?.preferences.showInactiveApps
+            _ = self?.preferences.perDeviceVolumes
         } onChange: { [weak self] in
             guard let self else { return }
             settingsStore.isPersistenceEnabled = preferences.rememberAppVolumes
@@ -266,23 +304,33 @@ final class MixerController {
             nextWake = min(nextWake ?? date, date)
         }
 
+        // A soloed app that has gone away must not keep everything else silent.
+        if let soloed = soloedAppID, !sessions.contains(where: { $0.id == soloed }) {
+            soloedAppID = nil
+        }
+        let deviceUIDForLevels = perDeviceKey
+
         for session in sessions {
             let id = session.id
-            let setting = settingsStore.setting(for: id)
-            let wantsTap = TapPolicy.shouldEngage(setting: setting, captureAuthorized: captureAuthorized) && engineFailures[id] == nil
+            let setting = settingsStore.effectiveSetting(for: id, deviceUID: deviceUIDForLevels)
+            let isSilencedBySolo = soloedAppID != nil && soloedAppID != id
+            let gain = isSilencedBySolo ? 0 : VolumeCurve.gain(for: setting)
+            let wantsTap = TapPolicy.shouldEngage(
+                setting: setting, captureAuthorized: captureAuthorized, isSilencedBySolo: isSilencedBySolo
+            ) && engineFailures[id] == nil
 
-            if wantsTap, let deviceUID = targetDeviceUID(for: session) {
+            if wantsTap, let deviceUID = route(for: session, setting: setting).deviceUID {
                 disengageDeadlines[id] = nil
                 let engine = engines[id] ?? makeEngine(for: session.identity)
-                engine.setGain(VolumeCurve.gain(for: setting))
+                engine.setGain(gain)
                 engine.apply(
                     target: .init(processObjectIDs: session.processObjectIDs, outputDeviceUID: deviceUID),
                     running: TapPolicy.shouldRunIO(sessionID: id, activity: activity, now: now)
                 )
                 wake(at: activity.graceExpiry(id, within: TapPolicy.ioIdleGrace, now: now))
             } else if let engine = engines[id] {
-                // Back at 100 %: pass audio through at unity briefly, then release the tap.
-                engine.setGain(VolumeCurve.gain(for: setting))
+                // Back to stock behaviour: pass audio through at unity briefly, then release the tap.
+                engine.setGain(gain)
                 let deadline = disengageDeadlines[id] ?? now.addingTimeInterval(TapPolicy.disengageDelay)
                 if !captureAuthorized || engineFailures[id] != nil || deadline <= now {
                     releaseEngine(id)
@@ -300,28 +348,62 @@ final class MixerController {
 
         let filter = AppListFilter(showInactiveApps: preferences.showInactiveApps)
         let items = sessions.compactMap { session -> AppItem? in
-            let setting = settingsStore.setting(for: session.id)
-            guard filter.isVisible(session, setting: setting, activity: activity, now: now) else { return nil }
+            let stored = settingsStore.setting(for: session.id)
+            let setting = stored.effective(onDeviceUID: deviceUIDForLevels)
+            guard filter.isVisible(session, isCustomised: !stored.isStorageDefault, activity: activity, now: now) else { return nil }
             wake(at: activity.graceExpiry(session.id, within: AppListFilter.lingerInterval, now: now))
+            let route = route(for: session, setting: setting)
             return AppItem(
                 identity: session.identity,
                 setting: setting,
                 isPlaying: session.isProducingOutput,
                 isProcessing: engines[session.id] != nil,
-                failureMessage: engineFailures[session.id]
+                failureMessage: engineFailures[session.id],
+                routedDeviceName: route.name,
+                isRouteUnavailable: route.isUnavailable,
+                isSoloed: soloedAppID == session.id,
+                isSilencedBySolo: soloedAppID != nil && soloedAppID != session.id
             )
         }
         update(\.apps, items)
         scheduleWake(at: nextWake)
     }
 
-    private func targetDeviceUID(for session: AudioAppSession) -> String? {
-        if let deviceID = session.preferredOutputDeviceID,
-           let device = deviceService.device(id: deviceID),
-           !device.uid.hasPrefix(HALConstants.aggregateUIDPrefix) {
-            return device.uid
-        }
-        return currentOutputDevice?.uid
+    /// Which output device to render an app onto, and what to tell the user about it.
+    ///
+    /// Priority: the device the user pinned the app to, then the device the app chose itself,
+    /// then the system default. A pinned device that is unplugged falls back to the default
+    /// without forgetting the preference, so the app returns to it on reconnect.
+    private func route(for session: AudioAppSession, setting: EffectiveAppSetting) -> (deviceUID: String?, name: String?, isUnavailable: Bool) {
+        let resolution = RoutePolicy.resolve(
+            pinnedDeviceUID: setting.routeDeviceUID,
+            availableDeviceUIDs: routableDeviceUIDs,
+            appDeviceUID: appChosenDeviceUID(for: session),
+            systemDefaultDeviceUID: currentOutputDevice?.uid
+        )
+        guard setting.routeDeviceUID != nil else { return (resolution.deviceUID, nil, false) }
+        let name = resolution.isPinnedDeviceMissing
+            ? settingsStore.setting(for: session.id).outputDeviceName
+            : deviceService.allOutputDevices.first { $0.uid == resolution.deviceUID }?.name
+        return (resolution.deviceUID, name, resolution.isPinnedDeviceMissing)
+    }
+
+    /// Devices an app may be pinned to: real outputs, never our own aggregate devices.
+    private var routableDeviceUIDs: Set<String> {
+        Set(deviceService.allOutputDevices.map(\.uid).filter { !$0.hasPrefix(HALConstants.aggregateUIDPrefix) })
+    }
+
+    /// The device the app itself selected, when it is a real output device.
+    private func appChosenDeviceUID(for session: AudioAppSession) -> String? {
+        guard let deviceID = session.preferredOutputDeviceID,
+              let device = deviceService.device(id: deviceID),
+              !device.uid.hasPrefix(HALConstants.aggregateUIDPrefix) else { return nil }
+        return device.uid
+    }
+
+    /// Device key for per-device levels, or `nil` when that feature is off.
+    private var perDeviceKey: String? {
+        preferences.perDeviceVolumes ? currentOutputDevice?.uid : nil
     }
 
     private func makeEngine(for identity: AppIdentity) -> ProcessTapEngine {

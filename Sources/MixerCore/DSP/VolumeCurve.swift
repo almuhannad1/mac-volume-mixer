@@ -7,7 +7,7 @@ public enum VolumeCurve {
         return clamped * clamped
     }
 
-    public static func gain(for setting: AppVolumeSetting) -> Float {
+    public static func gain(for setting: EffectiveAppSetting) -> Float {
         setting.isMuted ? 0 : gain(forVolume: setting.volume)
     }
 }

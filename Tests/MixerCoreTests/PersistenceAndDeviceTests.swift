@@ -3,36 +3,86 @@ import Testing
 @testable import MixerCore
 
 struct PersistenceTests {
+    private let speakers = "BuiltInSpeakerDevice"
+    private let headphones = "AirPodsPro"
+
     @Test func settingsRoundTripByBundleIdentifier() {
         let persistence = InMemoryPersistence()
         let store = AppVolumeSettingsStore(persistence: persistence)
-        store.update("com.spotify.client") { $0.setVolume(0.3) }
-        store.update("com.hnc.Discord") { $0.isMuted = true }
+        store.update("com.spotify.client") { $0.setLevel(volume: 0.3, forDeviceUID: nil) }
+        store.update("com.hnc.Discord") { $0.setLevel(isMuted: true, forDeviceUID: nil) }
 
         let reloaded = AppVolumeSettingsStore(persistence: persistence)
-        #expect(reloaded.setting(for: "com.spotify.client") == AppVolumeSetting(volume: 0.3))
-        #expect(reloaded.setting(for: "com.hnc.Discord").isMuted)
-        #expect(reloaded.setting(for: "com.google.Chrome") == .default)
+        #expect(reloaded.effectiveSetting(for: "com.spotify.client", deviceUID: nil).volume == 0.3)
+        #expect(reloaded.effectiveSetting(for: "com.hnc.Discord", deviceUID: nil).isMuted)
+        #expect(reloaded.effectiveSetting(for: "com.google.Chrome", deviceUID: nil) == .default)
     }
 
     @Test func defaultSettingsArePruned() {
         let persistence = InMemoryPersistence()
         let store = AppVolumeSettingsStore(persistence: persistence)
-        store.update("a") { $0.setVolume(0.5) }
-        store.update("a") { $0.setVolume(1) }
+        store.update("a") { $0.setLevel(volume: 0.5, forDeviceUID: nil) }
+        store.update("a") { $0.setLevel(volume: 1, forDeviceUID: nil) }
         #expect(store.allSettings.isEmpty)
         #expect(persistence.storage[AppVolumeSettingsStore.storageKey] == nil)
+    }
+
+    @Test func routingIsStoredEvenAtFullVolume() {
+        let persistence = InMemoryPersistence()
+        let store = AppVolumeSettingsStore(persistence: persistence)
+        store.update("a") { $0.setRoute(deviceUID: headphones, deviceName: "AirPods Pro") }
+
+        let reloaded = AppVolumeSettingsStore(persistence: persistence)
+        let setting = reloaded.effectiveSetting(for: "a", deviceUID: nil)
+        #expect(setting.routeDeviceUID == headphones)
+        #expect(setting.volume == 1)
+        #expect(!setting.isDefault) // needs a tap despite unity gain
+        #expect(reloaded.setting(for: "a").outputDeviceName == "AirPods Pro")
+
+        reloaded.update("a") { $0.setRoute(deviceUID: nil) }
+        #expect(reloaded.allSettings.isEmpty)
+    }
+
+    @Test func perDeviceLevelsAreIndependent() {
+        let store = AppVolumeSettingsStore(persistence: InMemoryPersistence())
+        store.update("a") { $0.setLevel(volume: 0.4, forDeviceUID: speakers) }
+        store.update("a") { $0.setLevel(volume: 0.15, forDeviceUID: headphones) }
+
+        #expect(store.effectiveSetting(for: "a", deviceUID: speakers).volume == 0.4)
+        #expect(store.effectiveSetting(for: "a", deviceUID: headphones).volume == 0.15)
+        // An unseen device falls back to the most recent level rather than jumping to 100 %.
+        #expect(store.effectiveSetting(for: "a", deviceUID: "usb").volume == 0.15)
+        // Per-device memory off: the baseline applies.
+        #expect(store.effectiveSetting(for: "a", deviceUID: nil).volume == 0.15)
+
+        store.update("a") { $0.setLevel(isMuted: true, forDeviceUID: speakers) }
+        #expect(store.effectiveSetting(for: "a", deviceUID: speakers).isMuted)
+        #expect(!store.effectiveSetting(for: "a", deviceUID: headphones).isMuted)
+        #expect(store.effectiveSetting(for: "a", deviceUID: headphones).volume == 0.15)
+    }
+
+    @Test func settingsWrittenByVersion1StillLoad() throws {
+        // Guards the promise that 1.1 needs no migration.
+        let legacy = Data(#"{"com.spotify.client":{"volume":0.3,"isMuted":false},"com.hnc.Discord":{"volume":1,"isMuted":true}}"#.utf8)
+        let persistence = InMemoryPersistence()
+        persistence.setData(legacy, forKey: AppVolumeSettingsStore.storageKey)
+
+        let store = AppVolumeSettingsStore(persistence: persistence)
+        #expect(store.effectiveSetting(for: "com.spotify.client", deviceUID: "anything").volume == 0.3)
+        #expect(store.effectiveSetting(for: "com.hnc.Discord", deviceUID: nil).isMuted)
+        #expect(store.setting(for: "com.spotify.client").outputDeviceUID == nil)
+        #expect(store.setting(for: "com.spotify.client").perDevice.isEmpty)
     }
 
     @Test func disablingPersistenceErasesStoredDataButKeepsSession() {
         let persistence = InMemoryPersistence()
         let store = AppVolumeSettingsStore(persistence: persistence)
-        store.update("a") { $0.setVolume(0.2) }
+        store.update("a") { $0.setLevel(volume: 0.2, forDeviceUID: nil) }
         store.isPersistenceEnabled = false
         #expect(persistence.storage.isEmpty)
-        store.update("b") { $0.isMuted = true }
+        store.update("b") { $0.setLevel(isMuted: true, forDeviceUID: nil) }
         #expect(persistence.storage.isEmpty)
-        #expect(store.setting(for: "a").volume == 0.2)
+        #expect(store.effectiveSetting(for: "a", deviceUID: nil).volume == 0.2)
 
         store.isPersistenceEnabled = true
         #expect(AppVolumeSettingsStore(persistence: persistence).allSettings.count == 2)
@@ -40,7 +90,7 @@ struct PersistenceTests {
 
     @Test func storeStartsEmptyWhenPersistenceDisabled() {
         let persistence = InMemoryPersistence()
-        AppVolumeSettingsStore(persistence: persistence).update("a") { $0.setVolume(0.2) }
+        AppVolumeSettingsStore(persistence: persistence).update("a") { $0.setLevel(volume: 0.2, forDeviceUID: nil) }
         #expect(AppVolumeSettingsStore(persistence: persistence, isPersistenceEnabled: false).allSettings.isEmpty)
     }
 
@@ -51,12 +101,11 @@ struct PersistenceTests {
     }
 
     @Test func decodingClampsOutOfRangeValues() throws {
-        let data = Data(#"{"volume": 4, "isMuted": false}"#.utf8)
-        let setting = try JSONDecoder().decode(AppVolumeSetting.self, from: data)
+        let setting = try JSONDecoder().decode(AppVolumeSetting.self, from: Data(#"{"volume": 4}"#.utf8))
         #expect(setting.volume == 1)
         #expect(AppVolumeSetting(volume: -3).volume == 0)
         #expect(AppVolumeSetting(volume: .nan).volume == 1)
-        #expect(AppVolumeSetting(volume: 0.354).percent == 35)
+        #expect(EffectiveAppSetting(volume: 0.354, isMuted: false).percent == 35)
     }
 }
 

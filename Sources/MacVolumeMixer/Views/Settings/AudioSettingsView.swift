@@ -28,6 +28,10 @@ struct AudioSettingsView: View {
                     Text("Remember application volumes")
                     Text("Restores each app's volume by bundle identifier, including after it relaunches.")
                 }
+                Toggle(isOn: $preferences.perDeviceVolumes) {
+                    Text("Remember a level per output device")
+                    Text("Keeps separate volumes for speakers and headphones, so switching output doesn't carry the wrong level over.")
+                }
                 Toggle(isOn: $preferences.showInactiveApps) {
                     Text("Show inactive applications")
                     Text("Also list apps that are connected to Core Audio but silent.")

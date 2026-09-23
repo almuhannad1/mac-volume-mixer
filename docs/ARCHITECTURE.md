@@ -55,8 +55,10 @@ MixerCore has no Core Audio or AppKit imports, which is why it can be unit teste
 | `MeterScale` | MixerCore | Peak → 0…1 display level on a −60 dB…0 dB scale. |
 | `AppIdentityResolver` | MixerCore | Process path/bundle ID → logical app. Outermost `.app` wins, so helpers group under their owner. Known system services (WebKit, system sounds) get a stable identity. |
 | `AudioSessionGrouper` | MixerCore | `[AudioProcessInfo]` → `[AudioAppSession]`. Excludes our own PID, merges helpers, derives "is playing" and a preferred output device. |
-| `AppVolumeSettingsStore` | MixerCore | Per-app `{volume, isMuted}` keyed by bundle ID, JSON in `UserDefaults`. Default values are pruned. Memory-only when "Remember application volumes" is off. |
-| `TapPolicy` | MixerCore | When to tap (non-default setting **and** capture authorized) and when to run IO (playing, or within the idle grace period). |
+| `AppVolumeSettingsStore` | MixerCore | Per-app `{volume, isMuted, route, per-device levels}` keyed by bundle ID, JSON in `UserDefaults`. Stock-behaviour entries are pruned. Memory-only when "Remember application volumes" is off. |
+| `AppVolumeSetting` / `EffectiveAppSetting` | MixerCore | The *stored* record versus what applies on the *current* output device. Keeping them apart is what lets routing, per-device levels and solo compose without tangling. |
+| `RoutePolicy` | MixerCore | Picks the device to render an app onto: pinned device → the app's own device → system default, reporting when a pinned device is missing. |
+| `TapPolicy` | MixerCore | When to tap — a changed level, a route (needed even at unity gain, since the audio must be re-rendered elsewhere) or a solo silencing the app — and when to run IO. |
 | `ActivityTracker` / `AppListFilter` | MixerCore | "Recently active" linger, inactive-app visibility, search matching. |
 | `AudioProcessMonitor` | AudioHAL | Listens to `kAudioHardwarePropertyProcessObjectList`, plus per-process `IsRunningOutput` and `Devices`. Coalesces events into one snapshot. |
 | `AudioDeviceService` | AudioHAL | Output device list and default output, via listeners. Hides devices with no output, hidden devices, and our own aggregate devices. |
@@ -89,6 +91,9 @@ sequenceDiagram
     MC->>ST: persist
     MC->>TE: setGain(0.09)  (atomic, no HAL call)
 ```
+
+**Solo** lives only in `MixerController` and is never written to the store, so clearing it restores
+every app's saved level exactly and a crash can never leave an app silenced.
 
 **Reconcile loop.** Every event (process change, device change, slider move, preference change,
 permission result, timer) calls `MixerController.reconcile()`. The function is idempotent: it

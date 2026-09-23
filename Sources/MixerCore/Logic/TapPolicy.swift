@@ -7,10 +7,16 @@ public enum TapPolicy {
     /// How long a tap stays engaged after its setting returns to 100 % (avoids churn while dragging).
     public static let disengageDelay: TimeInterval = 2
 
-    /// Apps at 100 % and unmuted are never tapped: no latency, no CPU, no risk.
+    /// Apps at 100 %, unmuted and unrouted are never tapped: no latency, no CPU, no risk.
+    /// Routing needs a tap even at unity gain, because the audio has to be re-rendered onto
+    /// another device. Solo needs one too, to silence everything the user is not listening to.
     /// Without capture authorization a muting tap would silence the app, so never engage then.
-    public static func shouldEngage(setting: AppVolumeSetting, captureAuthorized: Bool) -> Bool {
-        captureAuthorized && !setting.isDefault
+    public static func shouldEngage(
+        setting: EffectiveAppSetting,
+        captureAuthorized: Bool,
+        isSilencedBySolo: Bool = false
+    ) -> Bool {
+        captureAuthorized && (!setting.isDefault || isSilencedBySolo)
     }
 
     public static func shouldRunIO(sessionID: String, activity: ActivityTracker, now: Date) -> Bool {

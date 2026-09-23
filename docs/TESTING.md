@@ -3,14 +3,18 @@
 ## Automated
 
 ```bash
-swift test
+scripts/test.sh
 ```
 
-35 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
+Plain `swift test` also works where Xcode is installed. With only the Command Line Tools, SwiftPM
+may fail to find the swift-testing macro plugin; `scripts/test.sh` passes its path explicitly.
+
+42 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
 volume curve, meter scale and ballistics, atomics, app identity resolution (helper → owning app,
 WebKit, daemons), session grouping (including never listing the mixer itself), tap/visibility policies, activity tracking, search,
-persistence (round-trip, pruning, disabled persistence, corrupt data, clamping) and device
-filtering.
+persistence (round-trip, pruning, disabled persistence, corrupt data, clamping), per-app output
+routing (priority order, disconnected fallback, storage of a route at unity gain), per-device
+levels, backward compatibility with settings written by 1.0, and device filtering.
 
 Core Audio, taps and the UI are **not** covered automatically: they need real hardware, the
 System Audio Recording permission and a person listening.
@@ -59,6 +63,13 @@ Mac Volume Mixer, then press **Check Again**.
 | 8 | Set Spotify to 30 %, quit Spotify, relaunch it, play | Row returns at 30 % and is attenuated |
 | 9 | Search with six or more apps listed | The field appears and filters by name and bundle ID |
 | 10 | Stop all audio in an app | The row stays ~30 s, then disappears (unless *Show inactive applications* is on or it is muted/turned down) |
+| 22 | Right-click an app → *Play through* → a second device | Only that app moves; its row shows `→ Device`; everything else stays on the system output |
+| 23 | Route an app, then unplug that device | The row shows *(not connected)*, audio continues on the system output; replugging moves it back |
+| 24 | Route an app at 100 % | It still moves device (routing needs a tap even at unity gain) |
+| 25 | Solo an app | Every other app goes silent, the soloed row is highlighted; clearing solo restores each app's own level exactly |
+| 26 | Quit the soloed app while solo is on | Solo clears itself; nothing stays silent |
+| 27 | Set 40 % on speakers, switch to headphones, set 15 %, switch back | 40 % returns; turning off *Remember a level per output device* uses one shared level again |
+| 28 | Scroll over the menu bar icon; middle-click it | Master volume changes ~2 % per notch; middle-click toggles mute; both stop when the General setting is off |
 
 ### Devices
 

@@ -31,6 +31,10 @@ struct GeneralSettingsView: View {
                     Text("Open mixer automatically")
                     Text("Shows the mixer panel when the app starts.")
                 }
+                Toggle(isOn: $preferences.scrollOnMenuBarIcon) {
+                    Text("Scroll over the menu bar icon to change volume")
+                    Text("Middle-click the icon to mute.")
+                }
             }
         }
         .formStyle(.grouped)

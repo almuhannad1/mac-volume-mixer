@@ -1,8 +1,14 @@
 import MixerCore
 import SwiftUI
 
-/// Icon, title, percentage, mute button, slider and optional level meter.
-/// Shared by the master volume and every application row.
+/// A short line under a row's controls, e.g. the device an app is pinned to.
+struct RowSubtitle: Equatable {
+    let text: String
+    var isWarning = false
+}
+
+/// Icon, title, percentage, optional solo button, mute button, slider, optional subtitle and
+/// level meter. Shared by the master volume and every application row.
 struct VolumeControlRow<Leading: View>: View {
     let title: String
     let volume: Double
@@ -11,6 +17,10 @@ struct VolumeControlRow<Leading: View>: View {
     var canMute = true
     var isPlaying = false
     var meter: MeterLevel?
+    var subtitle: RowSubtitle?
+    /// Supplying this shows the solo button; the master row leaves it out.
+    var isSoloed = false
+    var onToggleSolo: (() -> Void)?
     let onVolumeChange: (Double) -> Void
     let onToggleMute: () -> Void
     @ViewBuilder let leading: () -> Leading
@@ -26,6 +36,13 @@ struct VolumeControlRow<Leading: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 header
                 controls
+                if let subtitle {
+                    Text(subtitle.text)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(subtitle.isWarning ? Color.orange : Color.secondary)
+                        .lineLimit(1)
+                        .padding(.leading, 26)
+                }
                 if let meter {
                     ActivityMeterView(level: meter)
                         .padding(.leading, 26)
@@ -51,6 +68,17 @@ struct VolumeControlRow<Leading: View>: View {
                     .accessibilityLabel("Playing audio")
             }
             Spacer(minLength: 8)
+            if let onToggleSolo {
+                Button(action: onToggleSolo) {
+                    Image(systemName: isSoloed ? "headphones.circle.fill" : "headphones")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSoloed ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.borderless)
+                .help(isSoloed ? "Stop listening to this app alone" : "Listen to this app alone")
+                .accessibilityLabel(isSoloed ? "Stop soloing \(title)" : "Solo \(title)")
+            }
             Text(isEnabled ? "\(percent)%" : "—")
                 .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(isMuted ? .tertiary : .secondary)

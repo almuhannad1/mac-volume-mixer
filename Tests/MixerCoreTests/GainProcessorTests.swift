@@ -72,7 +72,8 @@ struct VolumeCurveAndMeterTests {
     }
 
     @Test func mutedSettingHasZeroGain() {
-        #expect(VolumeCurve.gain(for: AppVolumeSetting(volume: 0.8, isMuted: true)) == 0)
+        #expect(VolumeCurve.gain(for: EffectiveAppSetting(volume: 0.8, isMuted: true)) == 0)
+        #expect(VolumeCurve.gain(for: EffectiveAppSetting(volume: 0.5, isMuted: false)) == 0.25)
     }
 
     @Test func meterScaleUsesDecibels() {

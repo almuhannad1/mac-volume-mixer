@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.loginItems = loginItems
         self.controller = controller
         self.viewModel = viewModel
-        statusItemController = StatusItemController(viewModel: viewModel)
+        statusItemController = StatusItemController(viewModel: viewModel, preferences: preferences)
         settingsWindowController = SettingsWindowController {
             SettingsView(preferences: preferences, loginItems: loginItems, controller: controller)
         }

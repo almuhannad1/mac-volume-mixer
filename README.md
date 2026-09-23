@@ -64,6 +64,12 @@ Full analysis, including the ranked alternatives and live API probes run on real
 ## Features
 
 - **Per-app volume (0–100 %) and independent mute**, keyed by bundle identifier.
+- **Per-app output device.** Send Discord to your headphones while music keeps playing through the
+  speakers — something macOS itself cannot do. A pinned device that is unplugged falls back to the
+  system output and returns when you plug it back in.
+- **Solo**: hear one app alone, silencing everything else, without touching any saved level.
+- **A level per output device**, so your headphone volume and speaker volume stop overwriting
+  each other.
 - **Master volume and mute** for the current output device.
 - **Output device switching** (speakers, AirPods, USB, HDMI, virtual devices…).
 - **Automatic app detection.** Apps appear as soon as they use audio and disappear 30 s after
@@ -87,7 +93,7 @@ Full analysis, including the ranked alternatives and live API probes run on real
 
 ```bash
 swift build                      # build all targets
-swift test                       # run the unit tests (35 tests)
+scripts/test.sh                  # run the unit tests (42 tests)
 swift scripts/make-app-icon.swift # regenerate Resources/AppIcon.icns (only if you change the icon)
 scripts/build-app.sh             # produce build/Mac Volume Mixer.app (ad-hoc signed)
 ```
@@ -148,8 +154,10 @@ Once installed and granted permission:
 |---|---|
 | **Open the mixer** | Click the fader icon in the menu bar. There is no Dock icon. |
 | **Change one app's volume** | Drag its slider. Nothing else changes — not other apps, not the system volume. |
-| **Mute one app** | Click the speaker button to the left of its slider. |
-| **Change the system volume** | Use the **Master Volume** slider at the top. |
+| **Send an app to other speakers** | Right-click its row → *Play through* → pick a device. |
+| **Hear one app alone** | Click the headphones button in its row; click again to restore everything. |
+| **Mute one app** | Click the speaker button to the left of its slider, or middle-click the menu bar icon to mute everything. |
+| **Change the system volume** | Use the **Master Volume** slider at the top, or scroll over the menu bar icon. |
 | **Switch speakers/headphones** | Use the device menu at the top of the panel. |
 | **Find an app in a long list** | The search field appears once six or more apps are listed. |
 | **Reset one app** | Right-click its row → *Reset to 100%*. |
@@ -206,6 +214,10 @@ These are platform limits, not missing work:
 8. **App Store distribution is unverified.** The MVP targets Developer ID.
 9. If an app plays to a device other than the default, the engine follows that device; if an app's
    helpers disagree, the system default is used.
+10. **A routed app ignores the Master Volume slider**, which controls the *system* output device
+    while the app now plays through a different one. Use that device's own volume instead.
+11. **Routed apps are always tapped**, even at 100 %, because their audio must be re-rendered onto
+    another device — so they carry the same ~10–20 ms as any processed app.
 
 ## Testing
 

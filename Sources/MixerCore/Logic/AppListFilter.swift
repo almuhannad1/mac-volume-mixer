@@ -11,12 +11,13 @@ public struct AppListFilter: Sendable {
         self.showInactiveApps = showInactiveApps
     }
 
-    public func isVisible(_ session: AudioAppSession, setting: AppVolumeSetting, activity: ActivityTracker, now: Date) -> Bool {
+    /// - Parameter isCustomised: the user changed this app's volume, mute or output device.
+    public func isVisible(_ session: AudioAppSession, isCustomised: Bool, activity: ActivityTracker, now: Date) -> Bool {
         if session.isProducingOutput { return true }
         if activity.wasActive(session.id, within: Self.lingerInterval, now: now) { return true }
         guard session.identity.isUserFacing else { return false }
-        // Keep apps the user has turned down or muted reachable, so they can be restored.
-        if !setting.isDefault { return true }
+        // Keep apps the user has turned down, muted or routed reachable, so they can be restored.
+        if isCustomised { return true }
         return showInactiveApps
     }
 

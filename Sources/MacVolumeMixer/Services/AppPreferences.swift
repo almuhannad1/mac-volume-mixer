@@ -12,6 +12,8 @@ final class AppPreferences {
         static let preferredOutputDeviceName = "preferredOutputDeviceName"
         static let rememberAppVolumes = "rememberAppVolumes"
         static let showInactiveApps = "showInactiveApps"
+        static let perDeviceVolumes = "perDeviceVolumes"
+        static let scrollOnMenuBarIcon = "scrollOnMenuBarIcon"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -42,12 +44,24 @@ final class AppPreferences {
         didSet { defaults.set(showInactiveApps, forKey: Key.showInactiveApps) }
     }
 
+    /// Remember a separate level per output device, so headphone and speaker levels don't fight.
+    var perDeviceVolumes: Bool {
+        didSet { defaults.set(perDeviceVolumes, forKey: Key.perDeviceVolumes) }
+    }
+
+    /// Scroll over the menu bar icon to change the master volume; middle-click to mute.
+    var scrollOnMenuBarIcon: Bool {
+        didSet { defaults.set(scrollOnMenuBarIcon, forKey: Key.scrollOnMenuBarIcon) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
             Key.openMixerAtLaunch: false,
             Key.rememberAppVolumes: true,
             Key.showInactiveApps: false,
+            Key.perDeviceVolumes: true,
+            Key.scrollOnMenuBarIcon: true,
         ])
         self.defaults = defaults
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -56,5 +70,7 @@ final class AppPreferences {
         preferredOutputDeviceName = defaults.string(forKey: Key.preferredOutputDeviceName)
         rememberAppVolumes = defaults.bool(forKey: Key.rememberAppVolumes)
         showInactiveApps = defaults.bool(forKey: Key.showInactiveApps)
+        perDeviceVolumes = defaults.bool(forKey: Key.perDeviceVolumes)
+        scrollOnMenuBarIcon = defaults.bool(forKey: Key.scrollOnMenuBarIcon)
     }
 }
