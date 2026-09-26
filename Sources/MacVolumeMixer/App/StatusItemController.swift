@@ -31,6 +31,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         observeContinuously { [weak self] in
             _ = self?.viewModel.controller.masterVolume
             _ = self?.viewModel.controller.isMasterMuted
+            _ = self?.viewModel.controller.captureAuthorization
         } onChange: { [weak self] in
             self?.updateIcon()
         }
@@ -105,6 +106,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Mac Volume Mixer")
         image?.isTemplate = true
         statusItem?.button?.image = image
+        // Say so on hover when per-app volume is inactive, instead of silently doing nothing.
+        let needsPermission = !controller.isTapProcessingDisabled && controller.captureAuthorization != .authorized
+        statusItem?.button?.toolTip = needsPermission
+            ? "Mac Volume Mixer — per-app volume needs System Audio Recording access"
+            : "Mac Volume Mixer"
     }
 
     func popoverDidShow(_ notification: Notification) {

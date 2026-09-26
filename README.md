@@ -128,6 +128,7 @@ Useful launch arguments:
 |---|---|
 | `--disable-taps` | Safe mode: master volume, device switching and the app list work, but no taps are created. Handy for troubleshooting. |
 | `--list-sessions` | Prints the output devices and detected audio sessions to stdout and exits. Creates no taps. |
+| `--check-permission` | Reports whether System Audio Recording is actually granted, by running the loopback self-test once and printing the result. Run the copy inside the installed bundle: `"/Applications/Mac Volume Mixer.app/Contents/MacOS/MacVolumeMixer" --check-permission`. |
 | `--self-test` | Builds a real tap + aggregate device + IOProc against the current output device and releases it, without starting IO. Confirms the audio pipeline works; mutes nothing and prompts for nothing. |
 | `--snapshot-panel <file.png> [--dark]` | Debug builds only: renders the panel offscreen for layout review. |
 

@@ -50,6 +50,12 @@ public final class AudioDeviceService {
         try HAL.write(HAL.systemObject, HAL.address(kAudioHardwarePropertyDefaultOutputDevice), value: deviceID)
     }
 
+    /// The system's current default output device, or `kAudioObjectUnknown` when none is ready.
+    nonisolated public static func currentDefaultOutputDeviceID() -> AudioObjectID {
+        (try? HAL.read(HAL.systemObject, HAL.address(kAudioHardwarePropertyDefaultOutputDevice),
+                       initial: AudioObjectID(kAudioObjectUnknown))) ?? AudioObjectID(kAudioObjectUnknown)
+    }
+
     nonisolated public static func readOutputDevices() -> [AudioOutputDevice] {
         let ids = (try? HAL.readArray(HAL.systemObject, HAL.address(kAudioHardwarePropertyDevices), of: AudioObjectID.self)) ?? []
         return ids.compactMap(readOutputDevice)

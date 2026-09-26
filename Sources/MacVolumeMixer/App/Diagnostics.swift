@@ -1,5 +1,6 @@
 import AppKit
 import AudioHAL
+import CoreAudio
 import MixerCore
 import SwiftUI
 
@@ -14,6 +15,43 @@ enum Diagnostics {
             return EXIT_SUCCESS
         case let .failure(error):
             print("✘ Tap pipeline failed: \(error)")
+            return EXIT_FAILURE
+        }
+    }
+
+    /// `--check-permission`: reports whether taps actually deliver audio for *this* bundle.
+    ///
+    /// Run the copy inside the installed app bundle to test the app's own grant; running the
+    /// bare binary tests the terminal's instead, since macOS attributes access to the caller.
+    static func checkCapturePermission() -> Int32 {
+        let deviceID = AudioDeviceService.currentDefaultOutputDeviceID()
+        guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
+            print("✘ No default output device; cannot check.")
+            return EXIT_FAILURE
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var outcome = AudioCaptureAuthorization.unknown
+        // Detached: this function blocks the main actor on the semaphore, so an inherited
+        // main-actor task would deadlock waiting for it.
+        Task.detached {
+            outcome = await AudioCapturePermissionProbe.check(outputDeviceID: deviceID)
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        switch outcome {
+        case .authorized:
+            print("✔ System Audio Recording is granted: per-app volume works.")
+            return EXIT_SUCCESS
+        case .notGranted:
+            print("✘ System Audio Recording is not granted, so taps would return silence.")
+            print("  Allow it in System Settings → Privacy & Security → Screen & System Audio Recording.")
+            return EXIT_FAILURE
+        case let .unavailable(reason):
+            print("✘ The check could not run: \(reason)")
+            return EXIT_FAILURE
+        case .unknown:
+            print("✘ The check did not complete.")
             return EXIT_FAILURE
         }
     }

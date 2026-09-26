@@ -1,5 +1,9 @@
 import AppKit
 
+if CommandLine.arguments.contains("--check-permission") {
+    exit(Diagnostics.checkCapturePermission())
+}
+
 if CommandLine.arguments.contains("--self-test") {
     exit(Diagnostics.runTapSelfTest())
 }

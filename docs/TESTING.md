@@ -28,6 +28,13 @@ swift build && .build/debug/MacVolumeMixer --list-sessions
 Expect the real output devices and the grouped audio sessions (helpers folded into their app).
 
 ```bash
+"/Applications/Mac Volume Mixer.app/Contents/MacOS/MacVolumeMixer" --check-permission
+```
+
+Answers "is per-app volume actually working?" in one line. macOS attributes capture access to the
+calling bundle, so run the copy inside the installed app, not the bare build product.
+
+```bash
 .build/debug/MacVolumeMixer --self-test
 ```
 
@@ -91,6 +98,8 @@ Mac Volume Mixer, then press **Check Again**.
 | 19 | Deny the permission | Banner explains; master volume and device switching still work; **no app is left silent** |
 | 20 | Revoke the permission while running | Reopen the panel; the app must not leave apps muted (quit and relaunch if the banner appears) |
 | 21 | Leave the app running idle for an hour with the panel closed | CPU stays near 0 %; no growth in memory |
+| 29 | Log out and back in with an app configured below 100 % | The tap engages by itself; if Core Audio has no default device yet at login, the check retries (5 s, 15 s, 60 s, then every 5 min) until it succeeds — it must never stay inert for the session |
+| 30 | Hover the menu bar icon while access is missing | The tooltip says per-app volume needs System Audio Recording |
 
 ### Assumptions worth confirming explicitly
 

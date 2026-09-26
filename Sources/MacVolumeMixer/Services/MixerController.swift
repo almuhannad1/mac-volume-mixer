@@ -61,6 +61,8 @@ final class MixerController {
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
     @ObservationIgnored private var scheduledWake: Date?
     @ObservationIgnored private var probeTask: Task<Void, Never>?
+    @ObservationIgnored private var captureRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var captureRetryAttempt = 0
     @ObservationIgnored private var workspaceObservers: [NSObjectProtocol] = []
 
     init(preferences: AppPreferences, disableTaps: Bool, defaults: UserDefaults = .standard) {
@@ -104,6 +106,7 @@ final class MixerController {
     // MARK: - Intents
 
     func setVolume(_ volume: Double, for appID: String) {
+        retryCaptureIfNeeded()
         let deviceUID = perDeviceKey
         settingsStore.update(appID) {
             // Dragging a muted app's slider up unmutes it, as the system volume does.
@@ -114,6 +117,7 @@ final class MixerController {
     }
 
     func toggleMute(for appID: String) {
+        retryCaptureIfNeeded()
         let deviceUID = perDeviceKey
         let isMuted = settingsStore.effectiveSetting(for: appID, deviceUID: deviceUID).isMuted
         settingsStore.update(appID) { $0.setLevel(isMuted: !isMuted, forDeviceUID: deviceUID) }
@@ -123,6 +127,7 @@ final class MixerController {
 
     /// Pins an app to one output device, or passes `nil` to follow the system output again.
     func setOutputDevice(_ deviceUID: String?, for appID: String) {
+        retryCaptureIfNeeded()
         let name = deviceUID.flatMap { uid in outputDevices.first { $0.uid == uid }?.name }
         settingsStore.update(appID) { $0.setRoute(deviceUID: deviceUID, deviceName: name) }
         engineFailures[appID] = nil
@@ -131,8 +136,20 @@ final class MixerController {
 
     /// Hear one app alone. Toggling the same app, or soloing another, replaces the current solo.
     func toggleSolo(for appID: String) {
+        retryCaptureIfNeeded()
         soloedAppID = soloedAppID == appID ? nil : appID
         reconcile()
+    }
+
+    private func retryCaptureIfNeeded() {
+        guard captureAuthorization != .authorized, probeTask == nil else { return }
+        captureRetryAttempt = 0
+        recheckCaptureAuthorization()
+    }
+
+    private func isUnavailable(_ authorization: AudioCaptureAuthorization) -> Bool {
+        if case .unavailable = authorization { return true }
+        return false
     }
 
     func clearSolo() {
@@ -180,7 +197,10 @@ final class MixerController {
         guard !isTapProcessingDisabled, probeTask == nil else { return }
         let deviceID = deviceService.defaultOutputDeviceID
         guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
+            // At login the app often starts before Core Audio publishes a default output device.
+            // Report it, but keep trying, or per-app volumes would stay unapplied all session.
             captureAuthorization = .unavailable("No output device is available.")
+            scheduleCaptureRetry()
             return
         }
         isCheckingCaptureAccess = true
@@ -193,9 +213,42 @@ final class MixerController {
                 AppLog.mixer.info("Audio capture authorization: \(String(describing: result), privacy: .public)")
                 captureAuthorization = result
             }
+            if result == .authorized {
+                captureRetryTask?.cancel()
+                captureRetryTask = nil
+                captureRetryAttempt = 0
+            } else {
+                scheduleCaptureRetry()
+            }
             reconcile()
         }
     }
+
+    /// Re-probe on a backoff while capture is unavailable, so a login-time failure heals itself.
+    ///
+    /// Only runs while the user has settings that need a tap: with nothing configured there is
+    /// nothing to apply, and an idle Mac should not be waking its output device every few minutes.
+    private func scheduleCaptureRetry() {
+        captureRetryTask?.cancel()
+        captureRetryTask = nil
+        guard !isTapProcessingDisabled, captureAuthorization != .authorized,
+              !settingsStore.allSettings.isEmpty else {
+            captureRetryAttempt = 0
+            return
+        }
+        let delay = Self.captureRetryDelays[min(captureRetryAttempt, Self.captureRetryDelays.count - 1)]
+        captureRetryAttempt += 1
+        captureRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            captureRetryTask = nil
+            recheckCaptureAuthorization()
+        }
+    }
+
+    private static let captureRetryDelays: [Duration] = [
+        .seconds(5), .seconds(15), .seconds(60), .seconds(300),
+    ]
 
     // MARK: - Event handling
 
@@ -209,6 +262,13 @@ final class MixerController {
         update(\.currentOutputDevice, newDefault)
         volumeController.bind(to: deviceService.defaultOutputDeviceID)
         masterVolumeChanged()
+
+        // A device arriving is a fresh chance for a check that failed while none existed.
+        if deviceService.defaultOutputDeviceID != AudioObjectID(kAudioObjectUnknown),
+           captureAuthorization == .unknown || isUnavailable(captureAuthorization) {
+            captureRetryAttempt = 0
+            recheckCaptureAuthorization()
+        }
 
         let uids = Set(deviceService.allOutputDevices.map(\.uid))
         let appeared = uids.subtracting(knownDeviceUIDs)

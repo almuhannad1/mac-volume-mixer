@@ -18,8 +18,8 @@ if [[ "${UNIVERSAL:-0}" == "1" ]]; then
 fi
 
 cd "$ROOT"
-swift build -c "$CONFIGURATION" --product MacVolumeMixer "${ARCH_ARGS[@]}"
-BIN_DIR="$(swift build -c "$CONFIGURATION" "${ARCH_ARGS[@]}" --show-bin-path)"
+swift build -c "$CONFIGURATION" --product MacVolumeMixer ${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"}
+BIN_DIR="$(swift build -c "$CONFIGURATION" ${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"} --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
