@@ -56,8 +56,11 @@ final class TapResources {
         processObjectIDs: [AudioObjectID],
         outputDeviceUID: String,
         muteBehavior: CATapMuteBehavior,
-        gain: AtomicFloat,
-        peak: AtomicFloat
+        gainLeft: AtomicFloat,
+        gainRight: AtomicFloat,
+        monoFlag: AtomicFloat,
+        peak: AtomicFloat,
+        preferredBufferFrames: UInt32? = nil
     ) throws -> TapResources {
         var rollback: [() -> Void] = []
         do {
@@ -96,12 +99,21 @@ final class TapResources {
                     """)
             }
 
-            let rampGain = UnsafeMutablePointer<Float>.allocate(capacity: 1)
-            rampGain.initialize(to: 0)
+            if let preferredBufferFrames {
+                applyBufferFrameSize(preferredBufferFrames, to: aggregateID, name: name)
+            }
+
+            // Two cells: the gain reached at the end of the previous cycle, per channel.
+            let rampGain = UnsafeMutablePointer<Float>.allocate(capacity: 2)
+            rampGain.initialize(repeating: 0, count: 2)
             rollback.append { rampGain.deallocate() }
 
             var ioProcID: AudioDeviceIOProcID?
-            let block = makeRenderBlock(gain: gain.rawPointer, peak: peak.rawPointer, rampGain: rampGain)
+            let block = makeRenderBlock(
+                gainLeft: gainLeft.rawPointer, gainRight: gainRight.rawPointer, monoFlag: monoFlag.rawPointer,
+                peak: peak.rawPointer, rampGain: rampGain,
+                gainStepPerFrame: Float(1 / (outputFormat.mSampleRate * Self.gainGlideSeconds))
+            )
             // A nil queue runs the block directly on the HAL's realtime IO thread.
             try CoreAudioError.check(
                 AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil, block),
@@ -125,7 +137,8 @@ final class TapResources {
 
     func start() throws {
         guard !isRunning, !isDestroyed else { return }
-        rampGain.pointee = 0 // fade in over the first buffer
+        rampGain[0] = 0 // fade in rather than opening at full level
+        rampGain[1] = 0
         try CoreAudioError.check(AudioDeviceStart(aggregateID, ioProcID), "Starting IO for \(name)")
         isRunning = true
     }
@@ -194,16 +207,42 @@ final class TapResources {
 
     /// Builds the realtime render block. It captures only raw pointers and plain values, so
     /// rendering performs no allocation, locking, reference counting or Objective-C messaging.
+    /// How long a gain change takes to complete, which is what makes call ducking sound
+    /// deliberate and slider drags click-free.
+    private static let gainGlideSeconds = 0.25
+
+    /// Applies the smallest buffer the device allows at or above `frames`, for lower latency.
+    private static func applyBufferFrameSize(_ frames: UInt32, to aggregateID: AudioObjectID, name: String) {
+        let address = HAL.address(kAudioDevicePropertyBufferFrameSize)
+        guard HAL.isSettable(aggregateID, address),
+              let range = try? HAL.read(aggregateID, HAL.address(kAudioDevicePropertyBufferFrameSizeRange),
+                                        initial: AudioValueRange(mMinimum: 0, mMaximum: 0)), range.mMaximum > 0
+        else { return }
+        let clamped = UInt32(min(max(Float64(frames), range.mMinimum), range.mMaximum))
+        do {
+            try HAL.write(aggregateID, address, value: clamped)
+            HALLog.taps.info("Buffer for \(name, privacy: .public) set to \(clamped) frames")
+        } catch {
+            // Not fatal: the device keeps its own size and we simply run at its latency.
+            HALLog.taps.notice("Device kept its own buffer size for \(name, privacy: .public)")
+        }
+    }
+
     private static func makeRenderBlock(
-        gain: OpaquePointer,
+        gainLeft: OpaquePointer,
+        gainRight: OpaquePointer,
+        monoFlag: OpaquePointer,
         peak: OpaquePointer,
-        rampGain: UnsafeMutablePointer<Float>
+        rampGain: UnsafeMutablePointer<Float>,
+        gainStepPerFrame: Float
     ) -> AudioDeviceIOBlock {
         { _, inputData, _, outputData, _ in
             let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             let outputs = UnsafeMutableAudioBufferListPointer(outputData)
             let sampleSize = MemoryLayout<Float>.size
-            let targetGain = rt_atomic_float_load(gain)
+            let targetLeft = rt_atomic_float_load(gainLeft)
+            let targetRight = rt_atomic_float_load(gainRight)
+            let isMono = rt_atomic_float_load(monoFlag) > 0.5
             var inputPeak: Float = 0
             var didRender = false
             // Taps are appended after the sub-device's own streams, so the tap is always the
@@ -228,15 +267,26 @@ final class TapResources {
                 let outputFrames = Int(output.mDataByteSize) / (sampleSize * outputChannels)
                 let frames = min(outputFrames, Int(input.mDataByteSize) / (sampleSize * inputChannels))
 
+                // Move toward the target by at most one glide's worth per cycle, so a jump in
+                // gain (ducking, mute, a slider) becomes a short fade instead of a click.
+                let maxStep = Float(frames) * gainStepPerFrame
+                let startLeft = rampGain[0]
+                let startRight = rampGain[1]
+                let endLeft = min(max(targetLeft, startLeft - maxStep), startLeft + maxStep)
+                let endRight = min(max(targetRight, startRight - maxStep), startRight + maxStep)
+
                 inputPeak = GainProcessor.render(
                     source: UnsafePointer(inputBytes.assumingMemoryBound(to: Float.self)),
                     sourceChannels: inputChannels,
                     destination: outputBytes.assumingMemoryBound(to: Float.self),
                     destinationChannels: outputChannels,
                     frameCount: frames,
-                    startGain: rampGain.pointee,
-                    endGain: targetGain
+                    startGains: ChannelGains(left: startLeft, right: startRight),
+                    endGains: ChannelGains(left: endLeft, right: endRight),
+                    isMono: isMono
                 )
+                rampGain[0] = endLeft
+                rampGain[1] = endRight
                 if frames < outputFrames {
                     let bytesPerFrame = sampleSize * outputChannels
                     memset(outputBytes + frames * bytesPerFrame, 0, (outputFrames - frames) * bytesPerFrame)
@@ -244,7 +294,6 @@ final class TapResources {
                 didRender = true
             }
 
-            rampGain.pointee = targetGain
             rt_atomic_float_store_max(peak, inputPeak)
         }
     }

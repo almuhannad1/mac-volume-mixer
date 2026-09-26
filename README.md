@@ -70,6 +70,10 @@ Full analysis, including the ranked alternatives and live API probes run on real
   speakers — something macOS itself cannot do. A pinned device that is unplugged falls back to the
   system output and returns when you plug it back in.
 - **Solo**: hear one app alone, silencing everything else, without touching any saved level.
+- **Automatic call ducking.** While an app has the microphone open, everything else fades down and
+  returns when the call ends. Only real apps trigger it, never the system services that hold the
+  mic permanently, such as Siri's speech recogniser.
+- **Per-app balance and mono**, for putting chat in one ear or listening with a single earbud.
 - **A level per output device**, so your headphone volume and speaker volume stop overwriting
   each other.
 - **Master volume and mute** for the current output device.
@@ -81,7 +85,10 @@ Full analysis, including the ranked alternatives and live API probes run on real
 - **Persistent volumes**, restored automatically when an app relaunches.
 - **Search/filter** once six or more apps are listed.
 - **Settings:** launch at login, menu bar icon, auto-open mixer, preferred output device,
-  remember volumes, show inactive apps, permission status, about.
+  remember volumes, per-device levels, show inactive apps, call ducking and its level,
+  low-latency processing, permission status, about.
+- **Low-latency processing**: processed apps ask the device for a 256-frame buffer (about 5 ms at
+  48 kHz), and every gain change glides over 250 ms so nothing clicks.
 - **Event-driven**: Core Audio property listeners plus a single scheduled wake-up, no polling.
   Meters run at 20 Hz only while the panel is open. Idle taps stop their IO after 15 s.
 
@@ -95,7 +102,7 @@ Full analysis, including the ranked alternatives and live API probes run on real
 
 ```bash
 swift build                      # build all targets
-scripts/test.sh                  # run the unit tests (42 tests)
+scripts/test.sh                  # run the unit tests (48 tests)
 swift scripts/make-app-icon.swift # regenerate Resources/AppIcon.icns (only if you change the icon)
 scripts/build-app.sh             # produce build/Mac Volume Mixer.app (ad-hoc signed)
 ```
@@ -160,6 +167,8 @@ Once installed and granted permission:
 | **Change one app's volume** | Drag its slider. Nothing else changes — not other apps, not the system volume. |
 | **Send an app to other speakers** | Right-click its row → *Play through* → pick a device. |
 | **Hear one app alone** | Click the headphones button in its row; click again to restore everything. |
+| **Put an app in one ear, or make it mono** | Right-click its row → *Balance*, or toggle *Mono*. |
+| **Stop calls dimming your music** | Settings → Audio → turn off *Dim other apps during calls*. |
 | **Mute one app** | Click the speaker button to the left of its slider, or middle-click the menu bar icon to mute everything. |
 | **Change the system volume** | Use the **Master Volume** slider at the top, or scroll over the menu bar icon. |
 | **Switch speakers/headphones** | Use the device menu at the top of the panel. |

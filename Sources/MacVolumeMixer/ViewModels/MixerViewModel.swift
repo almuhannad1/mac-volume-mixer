@@ -103,6 +103,8 @@ final class MixerViewModel {
     func setOutputDevice(_ deviceUID: String?, for app: MixerController.AppItem) {
         controller.setOutputDevice(deviceUID, for: app.id)
     }
+    func setBalance(_ balance: Double, for app: MixerController.AppItem) { controller.setBalance(balance, for: app.id) }
+    func setMono(_ isMono: Bool, for app: MixerController.AppItem) { controller.setMono(isMono, for: app.id) }
     func resetVolume(for app: MixerController.AppItem) { controller.resetVolume(for: app.id) }
     func setMasterVolume(_ volume: Double) { controller.setMasterVolume(Float(volume)) }
     func toggleMasterMute() { controller.toggleMasterMute() }

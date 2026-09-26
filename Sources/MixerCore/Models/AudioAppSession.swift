@@ -15,6 +15,9 @@ public struct AudioAppSession: Hashable, Sendable, Identifiable {
 
     public var isProducingOutput: Bool { processes.contains { $0.isRunningOutput } }
 
+    /// The app has the microphone open, which is how a call is detected.
+    public var isUsingInput: Bool { processes.contains { $0.isRunningInput } }
+
     /// The device this app plays to, when all of its playing processes agree on exactly one.
     /// `nil` means "use the system default output".
     public var preferredOutputDeviceID: UInt32? {

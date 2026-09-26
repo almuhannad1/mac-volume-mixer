@@ -26,7 +26,8 @@ public enum TapEngineSelfTest {
             // Tapping ourselves, unmuted: no other app is affected.
             let resources = try TapResources.make(
                 name: "Self Test", processObjectIDs: [ownProcess], outputDeviceUID: uid,
-                muteBehavior: .unmuted, gain: AtomicFloat(0), peak: AtomicFloat(0)
+                muteBehavior: .unmuted, gainLeft: AtomicFloat(0), gainRight: AtomicFloat(0),
+                monoFlag: AtomicFloat(0), peak: AtomicFloat(0)
             )
             resources.destroy()
             return .success("Tap pipeline built and released successfully on “\(name)” (\(uid)).")

@@ -11,16 +11,21 @@ public final class ProcessTapEngine: @unchecked Sendable {
     public struct Target: Equatable, Sendable {
         public var processObjectIDs: [AudioObjectID]
         public var outputDeviceUID: String
+        /// Smaller buffers mean lower latency; `nil` keeps the device's own size.
+        public var preferredBufferFrames: UInt32?
 
-        public init(processObjectIDs: [AudioObjectID], outputDeviceUID: String) {
+        public init(processObjectIDs: [AudioObjectID], outputDeviceUID: String, preferredBufferFrames: UInt32? = nil) {
             self.processObjectIDs = processObjectIDs
             self.outputDeviceUID = outputDeviceUID
+            self.preferredBufferFrames = preferredBufferFrames
         }
     }
 
     public let appID: String
     private let displayName: String
-    private let gain = AtomicFloat(0)
+    private let gainLeft = AtomicFloat(0)
+    private let gainRight = AtomicFloat(0)
+    private let monoFlag = AtomicFloat(0)
     private let peak = AtomicFloat(0)
     private let queue: DispatchQueue
 
@@ -42,9 +47,12 @@ public final class ProcessTapEngine: @unchecked Sendable {
         queue = DispatchQueue(label: "dev.macvolumemixer.tap-engine.\(appID)", target: Self.engineQueue)
     }
 
-    /// Linear gain (see `VolumeCurve`). Safe to call at slider rate.
-    public func setGain(_ value: Float) {
-        gain.store(value)
+    /// Per-channel linear gain (see `VolumeCurve.channelGains`). Safe to call at slider rate:
+    /// the render thread glides toward whatever is stored here, so changes never click.
+    public func setGains(_ gains: ChannelGains, isMono: Bool) {
+        gainLeft.store(gains.left)
+        gainRight.store(gains.right)
+        monoFlag.store(isMono ? 1 : 0)
     }
 
     /// Highest pre-gain sample since the previous call.
@@ -113,8 +121,11 @@ public final class ProcessTapEngine: @unchecked Sendable {
                 processObjectIDs: target.processObjectIDs,
                 outputDeviceUID: target.outputDeviceUID,
                 muteBehavior: .muted,
-                gain: gain,
-                peak: peak
+                gainLeft: gainLeft,
+                gainRight: gainRight,
+                monoFlag: monoFlag,
+                peak: peak,
+                preferredBufferFrames: target.preferredBufferFrames
             )
             resources = newResources
             if wantsRunning {

@@ -27,11 +27,37 @@ struct PolicyTests {
         #expect(!TapPolicy.shouldEngage(setting: routed, captureAuthorized: false))
     }
 
-    @Test func soloSilencesOtherAppsByTappingThem() {
-        #expect(TapPolicy.shouldEngage(setting: .default, captureAuthorized: true, isSilencedBySolo: true))
-        #expect(!TapPolicy.shouldEngage(setting: .default, captureAuthorized: true, isSilencedBySolo: false))
-        // Solo can never engage a tap without capture access, which would silence nothing.
-        #expect(!TapPolicy.shouldEngage(setting: .default, captureAuthorized: false, isSilencedBySolo: true))
+    @Test func soloAndDuckingEngageTapsOnUntouchedApps() {
+        #expect(TapPolicy.shouldEngage(setting: .default, captureAuthorized: true, isForcedByMixer: true))
+        #expect(!TapPolicy.shouldEngage(setting: .default, captureAuthorized: true, isForcedByMixer: false))
+        // Neither can engage a tap without capture access, which would silence nothing.
+        #expect(!TapPolicy.shouldEngage(setting: .default, captureAuthorized: false, isForcedByMixer: true))
+    }
+
+    @Test func callDuckingTriggersOnUserFacingMicUseOnly() {
+        func micSession(_ id: String, kind: AppIdentity.Kind, path: String?) -> AudioAppSession {
+            AudioAppSession(
+                identity: AppIdentity(id: id, bundleIdentifier: id, bundlePath: path, displayName: id, kind: kind),
+                processes: [AudioProcessInfo(objectID: 1, pid: 1, bundleID: id, executablePath: path,
+                                             isRunningOutput: false, isRunningInput: true)]
+            )
+        }
+        // Siri's recogniser holds the mic more or less permanently; it must never duck the Mac.
+        let daemon = micSession("com.apple.CoreSpeech", kind: .process, path: nil)
+        #expect(DuckPolicy.duckTrigger(in: [daemon]) == nil)
+
+        let discord = micSession("com.hnc.Discord", kind: .application, path: "/Applications/Discord.app")
+        #expect(DuckPolicy.duckTrigger(in: [daemon, discord]) == "com.hnc.Discord")
+
+        let silent = session("com.brave.Browser", playing: true)
+        #expect(DuckPolicy.duckTrigger(in: [silent]) == nil)
+    }
+
+    @Test func duckingSparesTheAppOnTheCall() {
+        #expect(DuckPolicy.levelMultiplier(for: "discord", trigger: "discord", level: 0.3) == 1)
+        #expect(DuckPolicy.levelMultiplier(for: "brave", trigger: "discord", level: 0.3) == 0.3)
+        #expect(DuckPolicy.levelMultiplier(for: "brave", trigger: nil, level: 0.3) == 1)
+        #expect(DuckPolicy.levelMultiplier(for: "brave", trigger: "discord", level: 5) == 1)
     }
 
     @Test func routeResolutionPrefersPinnedThenAppThenSystem() {

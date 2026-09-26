@@ -1,4 +1,5 @@
 import Foundation
+import MixerCore
 import Observation
 
 /// User preferences backed by `UserDefaults`.
@@ -14,6 +15,9 @@ final class AppPreferences {
         static let showInactiveApps = "showInactiveApps"
         static let perDeviceVolumes = "perDeviceVolumes"
         static let scrollOnMenuBarIcon = "scrollOnMenuBarIcon"
+        static let duckDuringCalls = "duckDuringCalls"
+        static let duckLevel = "duckLevel"
+        static let lowLatencyProcessing = "lowLatencyProcessing"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -54,6 +58,22 @@ final class AppPreferences {
         didSet { defaults.set(scrollOnMenuBarIcon, forKey: Key.scrollOnMenuBarIcon) }
     }
 
+    /// Dim other apps while an app is using the microphone.
+    var duckDuringCalls: Bool {
+        didSet { defaults.set(duckDuringCalls, forKey: Key.duckDuringCalls) }
+    }
+
+    /// What other apps drop to during a call, as a fraction of their own level.
+    var duckLevel: Double {
+        didSet { defaults.set(duckLevel, forKey: Key.duckLevel) }
+    }
+
+    /// Ask the audio device for a smaller buffer while processing, trading a little headroom
+    /// for lower latency.
+    var lowLatencyProcessing: Bool {
+        didSet { defaults.set(lowLatencyProcessing, forKey: Key.lowLatencyProcessing) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
@@ -62,6 +82,9 @@ final class AppPreferences {
             Key.showInactiveApps: false,
             Key.perDeviceVolumes: true,
             Key.scrollOnMenuBarIcon: true,
+            Key.duckDuringCalls: true,
+            Key.duckLevel: DuckPolicy.defaultLevel,
+            Key.lowLatencyProcessing: true,
         ])
         self.defaults = defaults
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -72,5 +95,8 @@ final class AppPreferences {
         showInactiveApps = defaults.bool(forKey: Key.showInactiveApps)
         perDeviceVolumes = defaults.bool(forKey: Key.perDeviceVolumes)
         scrollOnMenuBarIcon = defaults.bool(forKey: Key.scrollOnMenuBarIcon)
+        duckDuringCalls = defaults.bool(forKey: Key.duckDuringCalls)
+        duckLevel = defaults.double(forKey: Key.duckLevel)
+        lowLatencyProcessing = defaults.bool(forKey: Key.lowLatencyProcessing)
     }
 }

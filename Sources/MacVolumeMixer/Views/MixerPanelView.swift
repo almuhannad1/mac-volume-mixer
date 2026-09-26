@@ -11,6 +11,15 @@ struct MixerPanelView: View {
             FittedScrollView(maxHeight: 520, contentHeight: $model.panelContentHeight) {
                 VStack(alignment: .leading, spacing: 14) {
                     OutputSectionView(model: model)
+                    if let duckingApp = model.controller.duckingAppName {
+                        Label("Other apps dimmed while \(duckingApp) uses the microphone", systemImage: "phone.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
                     if let notice = model.captureNotice {
                         PermissionBannerView(notice: notice, onOpenSettings: model.openPrivacySettings, onRetry: model.recheckPermission)
                     }

@@ -9,6 +9,8 @@ public struct AudioProcessInfo: Hashable, Sendable {
     public let executablePath: String?
     /// `kAudioProcessPropertyIsRunningOutput`.
     public let isRunningOutput: Bool
+    /// `kAudioProcessPropertyIsRunningInput`: the process has the microphone open.
+    public let isRunningInput: Bool
     /// `kAudioProcessPropertyDevices` in the output scope.
     public let outputDeviceIDs: [UInt32]
 
@@ -18,6 +20,7 @@ public struct AudioProcessInfo: Hashable, Sendable {
         bundleID: String?,
         executablePath: String?,
         isRunningOutput: Bool,
+        isRunningInput: Bool = false,
         outputDeviceIDs: [UInt32] = []
     ) {
         self.objectID = objectID
@@ -25,6 +28,7 @@ public struct AudioProcessInfo: Hashable, Sendable {
         self.bundleID = bundleID
         self.executablePath = executablePath
         self.isRunningOutput = isRunningOutput
+        self.isRunningInput = isRunningInput
         self.outputDeviceIDs = outputDeviceIDs
     }
 }

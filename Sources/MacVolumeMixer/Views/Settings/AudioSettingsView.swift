@@ -39,6 +39,28 @@ struct AudioSettingsView: View {
                 Button("Reset All Application Volumes…", role: .destructive, action: confirmReset)
             }
 
+            Section("Calls") {
+                Toggle(isOn: $preferences.duckDuringCalls) {
+                    Text("Dim other apps during calls")
+                    Text("While an app has the microphone open, everything else drops to the level below and returns when the call ends.")
+                }
+                Picker("Dim other apps to", selection: $preferences.duckLevel) {
+                    Text("10%").tag(0.1)
+                    Text("20%").tag(0.2)
+                    Text("30%").tag(0.3)
+                    Text("50%").tag(0.5)
+                    Text("70%").tag(0.7)
+                }
+                .disabled(!preferences.duckDuringCalls)
+            }
+
+            Section("Processing") {
+                Toggle(isOn: $preferences.lowLatencyProcessing) {
+                    Text("Low-latency processing")
+                    Text("Asks the output device for a smaller buffer while an app is being processed. Turn this off if you hear crackling.")
+                }
+            }
+
             Section("Permission") {
                 LabeledContent("System Audio Recording") {
                     HStack(spacing: 6) {

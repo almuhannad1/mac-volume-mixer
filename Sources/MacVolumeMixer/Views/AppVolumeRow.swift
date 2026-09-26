@@ -10,6 +10,8 @@ struct AppVolumeRow: View {
     let onToggleMute: () -> Void
     let onToggleSolo: () -> Void
     let onRoute: (String?) -> Void
+    let onBalance: (Double) -> Void
+    let onMono: (Bool) -> Void
     let onReset: () -> Void
 
     var body: some View {
@@ -28,7 +30,14 @@ struct AppVolumeRow: View {
             ) {
                 AppIconView(icon: icon)
             }
-            .opacity(item.isSilencedBySolo ? 0.45 : 1)
+            .opacity(item.isSilencedBySolo ? 0.45 : (item.isDuckedByCall ? 0.7 : 1))
+
+            if item.isDuckedByCall, item.failureMessage == nil {
+                Label("Dimmed for a call", systemImage: "phone.fill")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 38)
+            }
 
             if let failure = item.failureMessage {
                 Label("Volume can't be applied to this app", systemImage: "exclamationmark.triangle.fill")
@@ -50,6 +59,18 @@ struct AppVolumeRow: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             }
+            Menu("Balance") {
+                Picker("Balance", selection: balanceBinding) {
+                    Text("Left").tag(-1.0)
+                    Text("Center Left").tag(-0.5)
+                    Text("Center").tag(0.0)
+                    Text("Center Right").tag(0.5)
+                    Text("Right").tag(1.0)
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Toggle("Mono", isOn: Binding(get: { item.setting.isMono }, set: { onMono($0) }))
             Button(item.isSoloed ? "Stop Listening Alone" : "Listen to This App Alone", action: onToggleSolo)
             Divider()
             Button("Reset This App", action: onReset)
@@ -63,6 +84,14 @@ struct AppVolumeRow: View {
         return item.isRouteUnavailable
             ? RowSubtitle(text: "→ \(name) (not connected)", isWarning: true)
             : RowSubtitle(text: "→ \(name)")
+    }
+
+    /// Snaps to the nearest of the five presets the menu offers.
+    private var balanceBinding: Binding<Double> {
+        Binding(
+            get: { (item.setting.balance * 2).rounded() / 2 },
+            set: { onBalance($0) }
+        )
     }
 
     private var routeBinding: Binding<String?> {

@@ -50,13 +50,14 @@ MixerCore has no Core Audio or AppKit imports, which is why it can be unit teste
 |---|---|---|
 | `RealtimeAtomics` | C | Lock-free `_Atomic` float cells (`store`, `load`, `exchange`, `store_max`) shared between the render thread and the main thread. |
 | `AtomicFloat` | MixerCore | Swift owner of an atomic cell. |
-| `GainProcessor` | MixerCore | Realtime-safe interleaved Float32 copy with a linear gain ramp and pre-gain peak detection. Handles channel mapping (stereo → N channels, stereo → mono). |
+| `GainProcessor` | MixerCore | Realtime-safe interleaved Float32 copy with per-channel gain ramps (balance, mono fold-down) and pre-gain peak detection. Handles channel mapping (stereo → N channels, stereo → mono). |
 | `VolumeCurve` | MixerCore | Slider value (0…1) → linear gain (`v²`, ≈ −12 dB at 50 %). Muted → 0. |
 | `MeterScale` | MixerCore | Peak → 0…1 display level on a −60 dB…0 dB scale. |
 | `AppIdentityResolver` | MixerCore | Process path/bundle ID → logical app. Outermost `.app` wins, so helpers group under their owner. Known system services (WebKit, system sounds) get a stable identity. |
 | `AudioSessionGrouper` | MixerCore | `[AudioProcessInfo]` → `[AudioAppSession]`. Excludes our own PID, merges helpers, derives "is playing" and a preferred output device. |
 | `AppVolumeSettingsStore` | MixerCore | Per-app `{volume, isMuted, route, per-device levels}` keyed by bundle ID, JSON in `UserDefaults`. Stock-behaviour entries are pruned. Memory-only when "Remember application volumes" is off. |
 | `AppVolumeSetting` / `EffectiveAppSetting` | MixerCore | The *stored* record versus what applies on the *current* output device. Keeping them apart is what lets routing, per-device levels and solo compose without tangling. |
+| `DuckPolicy` | MixerCore | Detects a call from `kAudioProcessPropertyIsRunningInput` and decides how much to dim the other apps. Only user-facing apps qualify, because system speech services hold the mic permanently. |
 | `RoutePolicy` | MixerCore | Picks the device to render an app onto: pinned device → the app's own device → system default, reporting when a pinned device is missing. |
 | `TapPolicy` | MixerCore | When to tap — a changed level, a route (needed even at unity gain, since the audio must be re-rendered elsewhere) or a solo silencing the app — and when to run IO. |
 | `ActivityTracker` / `AppListFilter` | MixerCore | "Recently active" linger, inactive-app visibility, search matching. |
@@ -136,7 +137,9 @@ The render block is realtime-safe:
 
 - It captures only raw pointers (`OpaquePointer` atomics and a ramp cell).
 - It does no allocation, locking, logging, ARC or Objective-C messaging.
-- The ramp prevents zipper noise when a slider moves.
+- The render thread glides toward the stored target gain by a bounded step per cycle (250 ms for
+  the full range), so ducking, mute and slider drags all fade instead of clicking.
+- Processed devices are asked for a 256-frame buffer, clamped to what the device allows.
 - Buffers the engine does not own are zeroed.
 
 ## Swift classes (by file)

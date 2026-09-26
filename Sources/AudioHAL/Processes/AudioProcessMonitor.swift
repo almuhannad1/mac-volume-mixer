@@ -53,6 +53,7 @@ public final class AudioProcessMonitor {
         for id in current where processListeners[id] == nil {
             processListeners[id] = [
                 PropertyListener(objectID: id, address: HAL.address(kAudioProcessPropertyIsRunningOutput), handler: handler),
+                PropertyListener(objectID: id, address: HAL.address(kAudioProcessPropertyIsRunningInput), handler: handler),
                 PropertyListener(objectID: id, address: HAL.address(kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeOutput), handler: handler),
             ]
         }
@@ -80,6 +81,7 @@ public final class AudioProcessMonitor {
             bundleID: try? HAL.readString(objectID, HAL.address(kAudioProcessPropertyBundleID)),
             executablePath: executablePath(for: pid),
             isRunningOutput: (try? HAL.readBool(objectID, HAL.address(kAudioProcessPropertyIsRunningOutput))) ?? false,
+            isRunningInput: (try? HAL.readBool(objectID, HAL.address(kAudioProcessPropertyIsRunningInput))) ?? false,
             outputDeviceIDs: (try? HAL.readArray(objectID, HAL.address(kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeOutput),
                                                  of: AudioObjectID.self)) ?? []
         )

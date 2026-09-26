@@ -5,18 +5,26 @@ public struct EffectiveAppSetting: Hashable, Sendable {
     public var isMuted: Bool
     /// Device the user pinned this app to, or `nil` to follow the app/system output.
     public var routeDeviceUID: String?
+    /// −1 fully left, 0 centred, +1 fully right.
+    public var balance: Double
+    /// Fold both channels together, e.g. for listening with one earbud.
+    public var isMono: Bool
 
     public static let `default` = EffectiveAppSetting(volume: 1, isMuted: false)
 
-    public init(volume: Double, isMuted: Bool, routeDeviceUID: String? = nil) {
+    public init(volume: Double, isMuted: Bool, routeDeviceUID: String? = nil, balance: Double = 0, isMono: Bool = false) {
         self.volume = AppVolumeSetting.clamp(volume)
         self.isMuted = isMuted
         self.routeDeviceUID = routeDeviceUID
+        self.balance = AppVolumeSetting.clampBalance(balance)
+        self.isMono = isMono
     }
 
-    /// `true` when the app would sound exactly as it does without the mixer: unity gain, unmuted
-    /// and playing where it would anyway — so no tap is needed.
-    public var isDefault: Bool { routeDeviceUID == nil && !isMuted && volume >= 0.9995 }
+    /// `true` when the app would sound exactly as it does without the mixer: unity gain, unmuted,
+    /// centred, stereo and playing where it would anyway — so no tap is needed.
+    public var isDefault: Bool {
+        routeDeviceUID == nil && !isMuted && volume >= 0.9995 && abs(balance) < 0.0005 && !isMono
+    }
 
     public var percent: Int { Int((volume * 100).rounded()) }
 }
@@ -55,6 +63,9 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
     /// Last known name of that device, shown while it is disconnected.
     public private(set) var outputDeviceName: String?
     public private(set) var perDevice: [String: DeviceLevel]
+    /// Stereo placement, shared across output devices: −1 left, 0 centred, +1 right.
+    public private(set) var balance: Double
+    public private(set) var isMono: Bool
 
     public static let `default` = AppVolumeSetting()
 
@@ -63,13 +74,17 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
         isMuted: Bool = false,
         outputDeviceUID: String? = nil,
         outputDeviceName: String? = nil,
-        perDevice: [String: DeviceLevel] = [:]
+        perDevice: [String: DeviceLevel] = [:],
+        balance: Double = 0,
+        isMono: Bool = false
     ) {
         self.volume = Self.clamp(volume)
         self.isMuted = isMuted
         self.outputDeviceUID = outputDeviceUID
         self.outputDeviceName = outputDeviceName
         self.perDevice = perDevice
+        self.balance = Self.clampBalance(balance)
+        self.isMono = isMono
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,7 +94,9 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
             isMuted: try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false,
             outputDeviceUID: try container.decodeIfPresent(String.self, forKey: .outputDeviceUID),
             outputDeviceName: try container.decodeIfPresent(String.self, forKey: .outputDeviceName),
-            perDevice: try container.decodeIfPresent([String: DeviceLevel].self, forKey: .perDevice) ?? [:]
+            perDevice: try container.decodeIfPresent([String: DeviceLevel].self, forKey: .perDevice) ?? [:],
+            balance: try container.decodeIfPresent(Double.self, forKey: .balance) ?? 0,
+            isMono: try container.decodeIfPresent(Bool.self, forKey: .isMono) ?? false
         )
     }
 
@@ -87,9 +104,11 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
     /// current device is unknown, which falls back to the baseline.
     public func effective(onDeviceUID deviceUID: String?) -> EffectiveAppSetting {
         if let deviceUID, let level = perDevice[deviceUID] {
-            return EffectiveAppSetting(volume: level.volume, isMuted: level.isMuted, routeDeviceUID: outputDeviceUID)
+            return EffectiveAppSetting(volume: level.volume, isMuted: level.isMuted, routeDeviceUID: outputDeviceUID,
+                                       balance: balance, isMono: isMono)
         }
-        return EffectiveAppSetting(volume: volume, isMuted: isMuted, routeDeviceUID: outputDeviceUID)
+        return EffectiveAppSetting(volume: volume, isMuted: isMuted, routeDeviceUID: outputDeviceUID,
+                                   balance: balance, isMono: isMono)
     }
 
     /// Changes the level for one device, mirroring it into the baseline so devices that have
@@ -108,6 +127,14 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
         outputDeviceName = deviceUID == nil ? nil : (deviceName ?? outputDeviceName)
     }
 
+    public mutating func setBalance(_ newValue: Double) {
+        balance = Self.clampBalance(newValue)
+    }
+
+    public mutating func setMono(_ newValue: Bool) {
+        isMono = newValue
+    }
+
     public mutating func clearPerDeviceLevels() {
         perDevice.removeAll()
     }
@@ -115,11 +142,17 @@ public struct AppVolumeSetting: Codable, Hashable, Sendable {
     /// `true` when nothing about this app differs from stock macOS behaviour, so the entry can be
     /// dropped from storage entirely.
     public var isStorageDefault: Bool {
-        outputDeviceUID == nil && !isMuted && volume >= 0.9995 && perDevice.values.allSatisfy(\.isDefault)
+        outputDeviceUID == nil && !isMuted && volume >= 0.9995 && !isMono && abs(balance) < 0.0005
+            && perDevice.values.allSatisfy(\.isDefault)
     }
 
     static func clamp(_ value: Double) -> Double {
         guard value.isFinite else { return 1 }
         return min(max(value, 0), 1)
+    }
+
+    static func clampBalance(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(max(value, -1), 1)
     }
 }

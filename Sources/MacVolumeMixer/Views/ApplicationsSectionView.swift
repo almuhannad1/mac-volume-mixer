@@ -35,6 +35,8 @@ struct ApplicationsSectionView: View {
                             onToggleMute: { model.toggleMute(for: app) },
                             onToggleSolo: { model.toggleSolo(for: app) },
                             onRoute: { model.setOutputDevice($0, for: app) },
+                            onBalance: { model.setBalance($0, for: app) },
+                            onMono: { model.setMono($0, for: app) },
                             onReset: { model.resetVolume(for: app) }
                         )
                         if app.id != apps.last?.id {

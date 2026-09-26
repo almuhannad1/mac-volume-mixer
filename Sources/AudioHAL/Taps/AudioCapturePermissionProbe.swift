@@ -47,14 +47,14 @@ public enum AudioCapturePermissionProbe {
             return .unavailable("Core Audio does not list this app as an audio process.")
         }
 
-        let gain = AtomicFloat(0) // monitor only: write silence to the device
+        let silent = AtomicFloat(0) // monitor only: write silence to the device
         let peak = AtomicFloat(0)
         let resources: TapResources
         let tone: ProbeTone
         do {
             resources = try TapResources.make(
                 name: "Permission Check", processObjectIDs: [ownProcess], outputDeviceUID: outputUID,
-                muteBehavior: .unmuted, gain: gain, peak: peak
+                muteBehavior: .unmuted, gainLeft: silent, gainRight: silent, monoFlag: AtomicFloat(0), peak: peak
             )
         } catch {
             return .unavailable(String(describing: error))

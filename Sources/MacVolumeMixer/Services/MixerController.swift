@@ -20,6 +20,8 @@ final class MixerController {
         /// Audio is routed through a tap, so a real level meter is available.
         let isProcessing: Bool
         let failureMessage: String?
+        /// Turned down automatically because another app is on a call.
+        let isDuckedByCall: Bool
         /// Name of the device this app is pinned to, or `nil` when it follows the system output.
         let routedDeviceName: String?
         /// The pinned device is not connected, so the app plays on the system output meanwhile.
@@ -40,6 +42,8 @@ final class MixerController {
     /// App the user is listening to alone; everything else is silenced. Never persisted, because
     /// a solo restored at launch would look like broken audio.
     private(set) var soloedAppID: String?
+    /// Name of the app whose call is currently dimming everything else, if any.
+    private(set) var duckingAppName: String?
     private(set) var captureAuthorization: AudioCaptureAuthorization = .unknown
     private(set) var isCheckingCaptureAccess = false
     /// Set by `--disable-taps`: everything except per-app processing works.
@@ -155,6 +159,21 @@ final class MixerController {
     func clearSolo() {
         guard soloedAppID != nil else { return }
         soloedAppID = nil
+        reconcile()
+    }
+
+    /// −1 fully left, 0 centred, +1 fully right.
+    func setBalance(_ balance: Double, for appID: String) {
+        retryCaptureIfNeeded()
+        settingsStore.update(appID) { $0.setBalance(balance) }
+        engineFailures[appID] = nil
+        reconcile()
+    }
+
+    func setMono(_ isMono: Bool, for appID: String) {
+        retryCaptureIfNeeded()
+        settingsStore.update(appID) { $0.setMono(isMono) }
+        engineFailures[appID] = nil
         reconcile()
     }
 
@@ -312,6 +331,9 @@ final class MixerController {
             _ = self?.preferences.rememberAppVolumes
             _ = self?.preferences.showInactiveApps
             _ = self?.preferences.perDeviceVolumes
+            _ = self?.preferences.duckDuringCalls
+            _ = self?.preferences.duckLevel
+            _ = self?.preferences.lowLatencyProcessing
         } onChange: { [weak self] in
             guard let self else { return }
             settingsStore.isPersistenceEnabled = preferences.rememberAppVolumes
@@ -370,27 +392,41 @@ final class MixerController {
         }
         let deviceUIDForLevels = perDeviceKey
 
+        // A call dims everything except the app making it. Only user-facing apps can trigger it;
+        // see DuckPolicy for why always-listening system services must not.
+        let duckTrigger = preferences.duckDuringCalls ? DuckPolicy.duckTrigger(in: sessions) : nil
+        update(\.duckingAppName, duckTrigger.flatMap { id in
+            sessions.first { $0.id == id }?.identity.displayName
+        })
+        let bufferFrames: UInt32? = preferences.lowLatencyProcessing ? Self.lowLatencyBufferFrames : nil
+
         for session in sessions {
             let id = session.id
             let setting = settingsStore.effectiveSetting(for: id, deviceUID: deviceUIDForLevels)
             let isSilencedBySolo = soloedAppID != nil && soloedAppID != id
-            let gain = isSilencedBySolo ? 0 : VolumeCurve.gain(for: setting)
+            let duckMultiplier = DuckPolicy.levelMultiplier(for: id, trigger: duckTrigger, level: preferences.duckLevel)
+            let isDucked = duckMultiplier < 1
+            let gains = isSilencedBySolo
+                ? ChannelGains.silent
+                : VolumeCurve.channelGains(for: setting, scaledBy: duckMultiplier)
             let wantsTap = TapPolicy.shouldEngage(
-                setting: setting, captureAuthorized: captureAuthorized, isSilencedBySolo: isSilencedBySolo
+                setting: setting, captureAuthorized: captureAuthorized,
+                isForcedByMixer: isSilencedBySolo || isDucked
             ) && engineFailures[id] == nil
 
             if wantsTap, let deviceUID = route(for: session, setting: setting).deviceUID {
                 disengageDeadlines[id] = nil
                 let engine = engines[id] ?? makeEngine(for: session.identity)
-                engine.setGain(gain)
+                engine.setGains(gains, isMono: setting.isMono)
                 engine.apply(
-                    target: .init(processObjectIDs: session.processObjectIDs, outputDeviceUID: deviceUID),
+                    target: .init(processObjectIDs: session.processObjectIDs, outputDeviceUID: deviceUID,
+                                  preferredBufferFrames: bufferFrames),
                     running: TapPolicy.shouldRunIO(sessionID: id, activity: activity, now: now)
                 )
                 wake(at: activity.graceExpiry(id, within: TapPolicy.ioIdleGrace, now: now))
             } else if let engine = engines[id] {
                 // Back to stock behaviour: pass audio through at unity briefly, then release the tap.
-                engine.setGain(gain)
+                engine.setGains(gains, isMono: setting.isMono)
                 let deadline = disengageDeadlines[id] ?? now.addingTimeInterval(TapPolicy.disengageDelay)
                 if !captureAuthorized || engineFailures[id] != nil || deadline <= now {
                     releaseEngine(id)
@@ -419,6 +455,7 @@ final class MixerController {
                 isPlaying: session.isProducingOutput,
                 isProcessing: engines[session.id] != nil,
                 failureMessage: engineFailures[session.id],
+                isDuckedByCall: duckTrigger != nil && duckTrigger != session.id,
                 routedDeviceName: route.name,
                 isRouteUnavailable: route.isUnavailable,
                 isSoloed: soloedAppID == session.id,
@@ -460,6 +497,10 @@ final class MixerController {
               !device.uid.hasPrefix(HALConstants.aggregateUIDPrefix) else { return nil }
         return device.uid
     }
+
+    /// 256 frames is about 5 ms at 48 kHz: a worthwhile cut from the device default without
+    /// risking dropouts. Devices clamp it to their own supported range.
+    private static let lowLatencyBufferFrames: UInt32 = 256
 
     /// Device key for per-device levels, or `nil` when that feature is off.
     private var perDeviceKey: String? {

@@ -9,12 +9,14 @@ scripts/test.sh
 Plain `swift test` also works where Xcode is installed. With only the Command Line Tools, SwiftPM
 may fail to find the swift-testing macro plugin; `scripts/test.sh` passes its path explicitly.
 
-42 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
+48 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
 volume curve, meter scale and ballistics, atomics, app identity resolution (helper → owning app,
 WebKit, daemons), session grouping (including never listing the mixer itself), tap/visibility policies, activity tracking, search,
 persistence (round-trip, pruning, disabled persistence, corrupt data, clamping), per-app output
 routing (priority order, disconnected fallback, storage of a route at unity gain), per-device
-levels, backward compatibility with settings written by 1.0, and device filtering.
+levels, backward compatibility with settings written by 1.0, call ducking (only user-facing apps
+trigger it; the app on the call keeps its own level), per-channel gains for balance and mono, and
+device filtering.
 
 Core Audio, taps and the UI are **not** covered automatically: they need real hardware, the
 System Audio Recording permission and a person listening.
@@ -100,6 +102,11 @@ Mac Volume Mixer, then press **Check Again**.
 | 21 | Leave the app running idle for an hour with the panel closed | CPU stays near 0 %; no growth in memory |
 | 29 | Log out and back in with an app configured below 100 % | The tap engages by itself; if Core Audio has no default device yet at login, the check retries (5 s, 15 s, 60 s, then every 5 min) until it succeeds — it must never stay inert for the session |
 | 30 | Hover the menu bar icon while access is missing | The tooltip says per-app volume needs System Audio Recording |
+| 31 | Play music, then start a Discord/Zoom/FaceTime call | Music fades down over ~250 ms, the panel says which app is on the call, and it fades back when the call ends |
+| 32 | Leave Siri or dictation listening while music plays | **Nothing dims** — system speech services hold the mic permanently and must never trigger ducking |
+| 33 | Start a call in the browser you are also playing music in | That app keeps its own level (it is the call), others dim |
+| 34 | Right-click an app → *Balance* → Left, then *Mono* | Audio moves to the left ear; mono folds both channels; both engage a tap even at 100 % |
+| 35 | Watch the log while an app is processed | `Buffer for <app> set to 256 frames`; turning off *Low-latency processing* restores the device default |
 
 ### Assumptions worth confirming explicitly
 

@@ -70,9 +70,9 @@ enum Diagnostics {
         let sessions = AudioSessionGrouper.group(
             processes, excludingPID: getpid(), ownBundleID: AppBundle.identifier, resolver: resolver
         )
-        print("\nAudio sessions (▶ = playing)")
+        print("\nAudio sessions (▶ = playing, ● = microphone in use)")
         for session in sessions {
-            let marker = session.isProducingOutput ? "▶" : " "
+            let marker = (session.isProducingOutput ? "▶" : " ") + (session.isUsingInput ? "●" : " ")
             let pids = session.processes.map { "\($0.pid)" }.joined(separator: ", ")
             print("  \(marker) \(session.identity.displayName) — id: \(session.id), kind: \(session.identity.kind), "
                 + "user-facing: \(session.identity.isUserFacing), pids: \(pids)")
