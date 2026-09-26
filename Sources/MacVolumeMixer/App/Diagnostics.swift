@@ -84,6 +84,28 @@ enum Diagnostics {
 extension Diagnostics {
     /// Debug builds only: `MacVolumeMixer --snapshot-panel out.png [--dark]` renders the mixer panel
     /// offscreen with live device/session data (taps disabled) for layout review.
+    /// Debug builds only: renders the About tab offscreen, for reviewing its layout.
+    @MainActor
+    static func snapshotAbout(to path: String, dark: Bool) {
+        let application = NSApplication.shared
+        application.setActivationPolicy(.prohibited)
+        application.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+
+        let hostingView = NSHostingView(rootView: AboutSettingsView())
+        hostingView.frame = NSRect(x: 0, y: 0, width: 500, height: 440)
+        let window = NSWindow(contentRect: hostingView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hostingView
+        for _ in 0..<5 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        }
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else { return }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        print("Wrote \(path)")
+    }
+
     @MainActor
     static func snapshotPanel(to path: String, dark: Bool) {
         let application = NSApplication.shared

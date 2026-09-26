@@ -1,5 +1,7 @@
 # Mac Volume Mixer
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4)](https://github.com/sponsors/almuhannad1)
+
 A macOS menu bar mixer with **independent volume and mute for each application** — the macOS
 equivalent of the Windows Volume Mixer / EarTrumpet.
 
@@ -131,6 +133,7 @@ Useful launch arguments:
 | `--check-permission` | Reports whether System Audio Recording is actually granted, by running the loopback self-test once and printing the result. Run the copy inside the installed bundle: `"/Applications/Mac Volume Mixer.app/Contents/MacOS/MacVolumeMixer" --check-permission`. |
 | `--self-test` | Builds a real tap + aggregate device + IOProc against the current output device and releases it, without starting IO. Confirms the audio pipeline works; mutes nothing and prompts for nothing. |
 | `--snapshot-panel <file.png> [--dark]` | Debug builds only: renders the panel offscreen for layout review. |
+| `--snapshot-about <file.png> [--dark]` | Debug builds only: renders the About tab offscreen. |
 
 ### Install as a normal Mac app
 
@@ -260,6 +263,19 @@ imports neither Core Audio nor AppKit, which is what makes it testable headlessl
 - **Per-app output device routing** (send Spotify to speakers and Discord to headphones) — the
   aggregate device already makes this possible.
 - **Global hotkeys** and Now Playing integration.
-- **Universal binary + notarized release** (needs full Xcode for `--arch` cross-building).
-- **App icon and a first-run onboarding window** explaining the permission before the prompt.
+- **Notarized release** with Sparkle auto-update and a Homebrew cask (needs an Apple Developer account). Universal builds already ship.
+- **First-run onboarding window** explaining the permission before macOS prompts for it.
 - Tap-based metering for unprocessed apps, if measured cost proves negligible.
+
+## Author
+
+Built by [almuhannad1](https://github.com/almuhannad1), an independent developer.
+
+Questions, bugs and ideas are welcome: [open an issue](https://github.com/almuhannad1/mac-volume-mixer/issues)
+or email [almuhannad226@gmail.com](mailto:almuhannad226@gmail.com).
+
+## Support
+
+If Mac Volume Mixer is useful to you, you can [**sponsor its development**](https://github.com/sponsors/almuhannad1).
+Sponsorship funds the time that goes into new features, and eventually an Apple Developer
+account, which would remove the Gatekeeper warning on every download.

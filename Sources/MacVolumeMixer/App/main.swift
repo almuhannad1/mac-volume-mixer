@@ -14,6 +14,11 @@ if CommandLine.arguments.contains("--list-sessions") {
 }
 
 #if DEBUG
+if let index = CommandLine.arguments.firstIndex(of: "--snapshot-about"), index + 1 < CommandLine.arguments.count {
+    Diagnostics.snapshotAbout(to: CommandLine.arguments[index + 1], dark: CommandLine.arguments.contains("--dark"))
+    exit(EXIT_SUCCESS)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--snapshot-panel"), index + 1 < CommandLine.arguments.count {
     Diagnostics.snapshotPanel(to: CommandLine.arguments[index + 1], dark: CommandLine.arguments.contains("--dark"))
     exit(EXIT_SUCCESS)
