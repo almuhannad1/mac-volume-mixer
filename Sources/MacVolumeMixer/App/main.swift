@@ -17,6 +17,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--probe-multi-output") {
     exit(Diagnostics.probeMultiOutput(arguments: Array(CommandLine.arguments[(index + 1)...])))
 }
 
+if CommandLine.arguments.contains("--check-updates") {
+    exit(Diagnostics.checkForUpdates())
+}
+
 if CommandLine.arguments.contains("--measure-scan") {
     exit(Diagnostics.measureProcessScan())
 }
@@ -33,6 +37,11 @@ if CommandLine.arguments.contains("--list-sessions") {
 #if DEBUG
 if let index = CommandLine.arguments.firstIndex(of: "--snapshot-about"), index + 1 < CommandLine.arguments.count {
     Diagnostics.snapshotAbout(to: CommandLine.arguments[index + 1], dark: CommandLine.arguments.contains("--dark"))
+    exit(EXIT_SUCCESS)
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--snapshot-settings"), index + 1 < CommandLine.arguments.count {
+    Diagnostics.snapshotSettings(to: CommandLine.arguments[index + 1], dark: CommandLine.arguments.contains("--dark"))
     exit(EXIT_SUCCESS)
 }
 

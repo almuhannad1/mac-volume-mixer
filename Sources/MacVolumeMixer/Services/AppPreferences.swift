@@ -18,6 +18,8 @@ final class AppPreferences {
         static let duckDuringCalls = "duckDuringCalls"
         static let duckLevel = "duckLevel"
         static let lowLatencyProcessing = "lowLatencyProcessing"
+        static let checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
+        static let lastUpdateCheck = "lastUpdateCheck"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -76,6 +78,19 @@ final class AppPreferences {
         didSet { defaults.set(lowLatencyProcessing, forKey: Key.lowLatencyProcessing) }
     }
 
+    /// Ask GitHub once a day whether a newer release exists.
+    ///
+    /// **Off by default.** This is the only feature that uses the network, so it stays opt-in; a
+    /// manual Check Now still works without it.
+    var checkForUpdatesAutomatically: Bool {
+        didSet { defaults.set(checkForUpdatesAutomatically, forKey: Key.checkForUpdatesAutomatically) }
+    }
+
+    /// When the last check ran, so enabling the setting cannot cause a request on every launch.
+    var lastUpdateCheck: Date? {
+        didSet { defaults.set(lastUpdateCheck, forKey: Key.lastUpdateCheck) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
@@ -87,6 +102,7 @@ final class AppPreferences {
             Key.duckDuringCalls: true,
             Key.duckLevel: DuckPolicy.defaultLevel,
             Key.lowLatencyProcessing: false,
+            Key.checkForUpdatesAutomatically: false,
         ])
         self.defaults = defaults
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -100,5 +116,7 @@ final class AppPreferences {
         duckDuringCalls = defaults.bool(forKey: Key.duckDuringCalls)
         duckLevel = defaults.double(forKey: Key.duckLevel)
         lowLatencyProcessing = defaults.bool(forKey: Key.lowLatencyProcessing)
+        checkForUpdatesAutomatically = defaults.bool(forKey: Key.checkForUpdatesAutomatically)
+        lastUpdateCheck = defaults.object(forKey: Key.lastUpdateCheck) as? Date
     }
 }

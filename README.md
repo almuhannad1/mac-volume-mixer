@@ -43,6 +43,35 @@ xattr -dr com.apple.quarantine "/Applications/Mac Volume Mixer.app"
 Each release lists SHA-256 checksums so you can confirm the download is intact
 (`shasum -a 256 MacVolumeMixer-*.dmg`). Prefer to build it yourself? See [Build](#build).
 
+## Updating
+
+### How to update
+
+1. **Quit the running copy** from the menu bar icon — it is holding live audio taps.
+2. Download the newer `.dmg` from the
+   [Releases page](https://github.com/almuhannad1/mac-volume-mixer/releases/latest) and drag it
+   onto **Applications**, replacing the old one.
+3. If macOS asks for **System Audio Recording** again, allow it, then press **Check Again** in the
+   panel. Builds are ad-hoc signed, so the signature changes with every release and macOS treats
+   the new copy as a different app.
+
+**Your settings are kept.** Per-app volumes live in `~/Library/Preferences`, not inside the app
+bundle, so replacing the app leaves them alone. Every version reads settings written by every
+earlier one.
+
+### How to find out a new version exists
+
+- **In the app:** turn on *Settings → General → Check for updates automatically*. It asks GitHub
+  once a day and shows a link when a newer release is out. It is **off until you turn it on**,
+  because it is the only thing in the app that uses the network, and nothing is ever downloaded or
+  installed for you. **Check Now** works whether or not the setting is on.
+- **From GitHub:** press **Watch → Custom → Releases** on the repository to get an email for each
+  release, or subscribe to
+  [the releases feed](https://github.com/almuhannad1/mac-volume-mixer/releases.atom) in any RSS
+  reader. This works for every version, including ones older than 1.2.0.
+
+Versions before 1.2.0 have no update check at all, so they cannot tell you about a new release.
+
 ## How it works, and why that matters
 
 macOS has **no** API equivalent to Windows' `ISimpleAudioVolume` — nothing can set another
@@ -86,7 +115,7 @@ Full analysis, including the ranked alternatives and live API probes run on real
 - **Search/filter** once six or more apps are listed.
 - **Settings:** launch at login, menu bar icon, auto-open mixer, preferred output device,
   remember volumes, per-device levels, show inactive apps, call ducking and its level,
-  low-latency processing, permission status, about.
+  low-latency processing, permission status, update check, about.
 - **Low-latency processing** (off by default): processed apps ask the device for a 256-frame
   buffer instead of its own. It saves about 5 ms but doubles how often the audio thread wakes
   (94 → 188 times a second per processed app), so it is opt-in. Gain changes glide over 250 ms
@@ -279,7 +308,7 @@ imports neither Core Audio nor AppKit, which is what makes it testable headlessl
 - **Per-app output device routing** (send Spotify to speakers and Discord to headphones) — the
   aggregate device already makes this possible.
 - **Global hotkeys** and Now Playing integration.
-- **Notarized release** with Sparkle auto-update and a Homebrew cask (needs an Apple Developer account). Universal builds already ship.
+- **Notarized release** with Sparkle auto-update and a Homebrew cask (needs an Apple Developer account). Universal builds already ship, and the app can already tell you when a release is out — but it deliberately does not install anything, because an ad-hoc signature changes on every build and macOS would ask for the audio permission again each time. A stable Developer ID signature is what makes silent updating safe.
 - **First-run onboarding window** explaining the permission before macOS prompts for it.
 - Tap-based metering for unprocessed apps, if measured cost proves negligible.
 

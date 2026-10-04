@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 struct GeneralSettingsView: View {
     @Bindable var preferences: AppPreferences
     let loginItems: LoginItemService
+    let updateChecker: UpdateChecker
 
     var body: some View {
         Form {
@@ -36,8 +38,41 @@ struct GeneralSettingsView: View {
                     Text("Middle-click the icon to mute.")
                 }
             }
+
+            Section("Updates") {
+                Toggle(isOn: $preferences.checkForUpdatesAutomatically) {
+                    Text("Check for updates automatically")
+                    Text("Asks GitHub once a day whether a newer version exists — the only time this app uses the network. Nothing is downloaded or installed for you.")
+                }
+                LabeledContent("Version \(AppBundle.shortVersion ?? "development build")") {
+                    HStack(spacing: 8) {
+                        updateStatus
+                        Button("Check Now", action: updateChecker.checkNow)
+                            .disabled(updateChecker.state == .checking)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .onAppear(perform: loginItems.refresh)
+    }
+
+    @ViewBuilder
+    private var updateStatus: some View {
+        switch updateChecker.state {
+        case .idle:
+            EmptyView()
+        case .checking:
+            ProgressView().controlSize(.mini)
+        case let .upToDate(version):
+            Text("Up to date (\(version.description))").foregroundStyle(.secondary)
+        case let .available(release):
+            Button("Version \(release.version.description) is available") {
+                NSWorkspace.shared.open(release.url)
+            }
+            .buttonStyle(.link)
+        case let .failed(message):
+            Text(message).foregroundStyle(.secondary).lineLimit(2)
+        }
     }
 }

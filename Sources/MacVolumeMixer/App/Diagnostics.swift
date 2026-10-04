@@ -159,6 +159,40 @@ enum Diagnostics {
         }
     }
 
+    /// `--check-updates`: runs one update check and prints the result.
+    ///
+    /// Uses a throwaway preferences domain, so it neither reads nor disturbs the user's settings
+    /// (in particular it does not count as the once-a-day automatic check).
+    @MainActor
+    static func checkForUpdates() -> Int32 {
+        let defaults = UserDefaults(suiteName: "MacVolumeMixer.updateCheck") ?? .standard
+        defaults.removePersistentDomain(forName: "MacVolumeMixer.updateCheck")
+        let checker = UpdateChecker(preferences: AppPreferences(defaults: defaults))
+        print("Installed version: \(AppBundle.shortVersion ?? "development build (run the copy inside the .app to compare)")")
+        checker.checkNow()
+
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline, checker.state == .checking || checker.state == .idle {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        defer { defaults.removePersistentDomain(forName: "MacVolumeMixer.updateCheck") }
+
+        switch checker.state {
+        case let .upToDate(version):
+            print("✔ Up to date (\(version)).")
+            return EXIT_SUCCESS
+        case let .available(release):
+            print("↑ Version \(release.version) is available: \(release.url.absoluteString)")
+            return EXIT_SUCCESS
+        case let .failed(message):
+            print("✘ \(message)")
+            return EXIT_FAILURE
+        case .checking, .idle:
+            print("✘ The check did not complete.")
+            return EXIT_FAILURE
+        }
+    }
+
     static func printAudioSessions() {
         print("Output devices")
         for device in AudioDeviceService.readOutputDevices() {
@@ -199,6 +233,34 @@ extension Diagnostics {
         let window = NSWindow(contentRect: hostingView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = hostingView
         for _ in 0..<5 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        }
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else { return }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        print("Wrote \(path)")
+    }
+
+    /// Debug builds only: renders the General settings tab offscreen, for reviewing its layout.
+    @MainActor
+    static func snapshotSettings(to path: String, dark: Bool) {
+        let application = NSApplication.shared
+        application.setActivationPolicy(.prohibited)
+        application.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+
+        let defaults = UserDefaults(suiteName: "MacVolumeMixer.snapshot") ?? .standard
+        let preferences = AppPreferences(defaults: defaults)
+        let checker = UpdateChecker(preferences: preferences)
+        let view = GeneralSettingsView(preferences: preferences, loginItems: LoginItemService(), updateChecker: checker)
+
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 500, height: 500)
+        let window = NSWindow(contentRect: hostingView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hostingView
+        checker.checkNow()
+        for _ in 0..<15 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         }
         hostingView.layoutSubtreeIfNeeded()

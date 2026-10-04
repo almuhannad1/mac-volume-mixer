@@ -4,16 +4,17 @@ struct SettingsView: View {
     let preferences: AppPreferences
     let loginItems: LoginItemService
     let controller: MixerController
+    let updateChecker: UpdateChecker
 
     var body: some View {
         TabView {
-            GeneralSettingsView(preferences: preferences, loginItems: loginItems)
+            GeneralSettingsView(preferences: preferences, loginItems: loginItems, updateChecker: updateChecker)
                 .tabItem { Label("General", systemImage: "gearshape") }
             AudioSettingsView(preferences: preferences, controller: controller)
                 .tabItem { Label("Audio", systemImage: "speaker.wave.2") }
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 500, height: 440)
+        .frame(width: 500, height: 500)
     }
 }

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let viewModel: MixerViewModel
     private let statusItemController: StatusItemController
     private let settingsWindowController: SettingsWindowController
+    private let updateChecker: UpdateChecker
 
     override init() {
         let preferences = AppPreferences()
@@ -17,14 +18,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             disableTaps: CommandLine.arguments.contains("--disable-taps")
         )
         let viewModel = MixerViewModel(controller: controller)
+        let updateChecker = UpdateChecker(preferences: preferences)
 
         self.preferences = preferences
+        self.updateChecker = updateChecker
         self.loginItems = loginItems
         self.controller = controller
         self.viewModel = viewModel
         statusItemController = StatusItemController(viewModel: viewModel, preferences: preferences)
         settingsWindowController = SettingsWindowController {
-            SettingsView(preferences: preferences, loginItems: loginItems, controller: controller)
+            SettingsView(preferences: preferences, loginItems: loginItems, controller: controller,
+                         updateChecker: updateChecker)
         }
         super.init()
     }
@@ -34,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
 
         statusItemController.setVisible(preferences.showMenuBarIcon)
+        // No-op unless the user turned automatic checks on.
+        updateChecker.checkIfDue()
         observeContinuously { [weak self] in
             _ = self?.preferences.showMenuBarIcon
         } onChange: { [weak self] in

@@ -9,7 +9,7 @@ scripts/test.sh
 Plain `swift test` also works where Xcode is installed. With only the Command Line Tools, SwiftPM
 may fail to find the swift-testing macro plugin; `scripts/test.sh` passes its path explicitly.
 
-50 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
+54 tests across 7 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
 volume curve, meter scale and ballistics, atomics, app identity resolution (helper → owning app,
 WebKit, daemons), session grouping (including never listing the mixer itself), tap/visibility policies, activity tracking, search,
 persistence (round-trip, pruning, disabled persistence, corrupt data, clamping), per-app output
@@ -17,7 +17,9 @@ routing (priority order, disconnected fallback, storage of a route at unity gain
 levels, backward compatibility with settings written by 1.0, call ducking (only user-facing apps
 trigger it; the app on the call keeps its own level; silent and non-user-facing apps are never
 dimmed, because that would engage a tap for nothing), incremental process updates preserving a
-process's immutable fields, per-channel gains for balance and mono, and device filtering.
+process's immutable fields, per-channel gains for balance and mono, device filtering, and release
+version parsing and comparison (numeric, so 1.10.0 beats 1.9.0; an unreadable version never claims
+an update; automatic checks are due at most daily and survive a clock moving backwards).
 
 Core Audio, taps and the UI are **not** covered automatically: they need real hardware, the
 System Audio Recording permission and a person listening.
@@ -95,6 +97,15 @@ temporary `AtomicFloat` cells, so if `TapResources` ever stops owning them, seve
 for a few seconds will trap in `libmalloc` with "memory corruption of free block".
 
 ```bash
+"/Applications/Mac Volume Mixer.app/Contents/MacOS/MacVolumeMixer" --check-updates
+```
+
+Runs one update check and prints the result. It uses a throwaway preferences domain, so it neither
+reads nor disturbs real settings and does not count as the once-a-day automatic check. Run the copy
+**inside the app bundle**: the bare binary has no `Info.plist`, so it has no version to compare and
+says so rather than guessing.
+
+```bash
 .build/release/MacVolumeMixer --watch-sessions 15
 ```
 
@@ -165,6 +176,12 @@ Mac Volume Mixer, then press **Check Again**.
 | 33 | Start a call in the browser you are also playing music in | That app keeps its own level (it is the call), others dim |
 | 34 | Right-click an app → *Balance* → Left, then *Mono* | Audio moves to the left ear; mono folds both channels; both engage a tap even at 100 % |
 | 35 | Turn on *Low-latency processing* and watch the log while an app is processed | `Buffer for <app> set to 256 frames`; with it off (the default) the device keeps its own buffer and no such line appears |
+| 38 | Fresh install, open **Settings → General** | *Check for updates automatically* is **off**, and nothing has contacted the network — confirm with Little Snitch, `nettop`, or simply that no check has run |
+| 39 | Press **Check Now** with the setting still off | One check runs and reports "Up to date" or offers the newer version; the setting stays off |
+| 40 | Turn the setting on, quit and relaunch twice within a day | Only **one** request is made: the second launch sees the stored date and skips |
+| 41 | Turn the setting on with networking disabled | Nothing is reported in the background; a manual **Check Now** explains the failure |
+| 42 | Install an older version, then check | The newer version is offered as a link to the release page; **nothing installs itself** |
+| 43 | Update over an existing copy, then reopen the panel | Per-app volumes are exactly as they were; re-grant System Audio Recording if macOS asks |
 | 37 | Start a call while several apps are listed but silent | Only apps **actually playing** show "Dimmed for a call" and gain a tap; silent rows are untouched (check with `--list-sessions` that no extra aggregate devices exist) |
 
 ### Assumptions worth confirming explicitly
