@@ -131,6 +131,34 @@ enum Diagnostics {
         return EXIT_SUCCESS
     }
 
+    /// `--probe-multi-output <uid> <uid> [--stacked]`: feasibility check for sending one app to
+    /// two output devices at once.
+    static func probeMultiOutput(arguments: [String]) -> Int32 {
+        let stacked = arguments.contains("--stacked")
+        let uids = arguments.filter { !$0.hasPrefix("--") }
+        guard uids.count >= 2 else {
+            print("Usage: --probe-multi-output <deviceUID> <deviceUID> [--stacked]")
+            print("Device UIDs come from --list-sessions.")
+            return EXIT_FAILURE
+        }
+        do {
+            let layout = arguments.contains("--nested")
+                ? try MultiOutputProbe.probeNested(deviceUIDs: uids)
+                : try MultiOutputProbe.probe(deviceUIDs: uids, stacked: stacked)
+            print("""
+                \(stacked ? "Stacked (mirrored)" : "Aggregate (channels concatenated)"): \(layout.aggregateName)
+                  Sample rate      \(Int(layout.sampleRate)) Hz
+                  Output streams   \(layout.outputStreamChannelCounts) → \(layout.totalOutputChannels) channels total
+                  Input streams    \(layout.inputStreamChannelCounts) (the tap is the last one)
+                  IO started       \(layout.startedIO ? "yes" : "NO")\(layout.note.isEmpty ? "" : " — \(layout.note)")
+                """)
+            return layout.startedIO ? EXIT_SUCCESS : EXIT_FAILURE
+        } catch {
+            print("✘ Not possible: \(error)")
+            return EXIT_FAILURE
+        }
+    }
+
     static func printAudioSessions() {
         print("Output devices")
         for device in AudioDeviceService.readOutputDevices() {

@@ -162,3 +162,39 @@ appear as ordinary selectable outputs.
 - The TCC prompt and actual audible attenuation. These need a person to approve the permission
   and listen.
 - The real-app test matrix in [TESTING.md](TESTING.md). It must be run manually.
+
+## One app to several outputs ("listen together" on two sets of AirPods)
+
+Can one app's audio be sent to **two output devices at once**, so two people each wear their own
+AirPods, while the rest of the Mac keeps playing where it was? Measured on macOS 27.0.1 with
+`--probe-multi-output`:
+
+| Composition | Output streams | IO starts | Verdict |
+|---|---|---|---|
+| tap + 2 real devices, not stacked | `[2, 2]` → 4 ch | yes | **works**, one stream per device |
+| tap + 3 real devices, not stacked | `[2, 2, 2]` → 6 ch | yes | **works**, generalises |
+| tap + 2 real devices, stacked | `[2]` → 2 ch | yes | works, but mirrored: one shared level |
+| tap + a Multi-Output Device | `[]` → **0 ch** | "yes" | **fails** — see below |
+| tap + devices of mismatched channel counts (2 ch + 1 ch) | `[2, 1]` → 3 ch | **no** (`0x10004003`) | reject such a pair |
+
+Three conclusions:
+
+1. **A non-stacked aggregate gives each destination its own output stream**, in the same order as
+   `kAudioAggregateDeviceSubDeviceListKey`. Proven by pairing a 2-channel device with a 1-channel
+   one and getting `[2, 1]` rather than `[1, 2]`. Separate streams mean each listener can have an
+   independent volume, which macOS's own Multi-Output Device cannot do at all.
+2. **Aggregates do not nest.** Putting a Multi-Output Device inside the tap's aggregate is accepted
+   by `AudioHardwareCreateAggregateDevice` and even by `AudioDeviceStart`, yet the device ends up
+   with **no output streams**, so the audio would go nowhere. It fails silently at the HAL level;
+   `TapResources.make` catches it only because it already requires a usable output format. So
+   routing an app to a user-made Multi-Output Device cannot work, and a Multi-Output Device chosen
+   as the *system* output stops per-app volume working for every configured app.
+3. **Devices must agree on channel count.** A stereo device paired with a mono one composes but
+   will not start, so destinations have to be filtered to ≥ 2 output channels.
+
+Drift compensation is required on every sub-device after the first, because two Bluetooth
+headsets run on independent clocks. It is already used for the tap and works here unchanged.
+
+**Not verifiable from this session:** two real sets of AirPods were not connected, so the
+Bluetooth-specific risks — 2.4 GHz bandwidth for two A2DP streams, each headset's own latency
+offset, and a switch to HFP when either microphone opens — still need a person wearing them.

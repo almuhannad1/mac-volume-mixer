@@ -13,6 +13,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--watch-sessions") {
     exit(Diagnostics.watchSessions(seconds: seconds))
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--probe-multi-output") {
+    exit(Diagnostics.probeMultiOutput(arguments: Array(CommandLine.arguments[(index + 1)...])))
+}
+
 if CommandLine.arguments.contains("--measure-scan") {
     exit(Diagnostics.measureProcessScan())
 }
