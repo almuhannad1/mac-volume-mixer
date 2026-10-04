@@ -8,6 +8,19 @@ if CommandLine.arguments.contains("--self-test") {
     exit(Diagnostics.runTapSelfTest())
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--watch-sessions") {
+    let seconds = Double(CommandLine.arguments.count > index + 1 ? CommandLine.arguments[index + 1] : "") ?? 15
+    exit(Diagnostics.watchSessions(seconds: seconds))
+}
+
+if CommandLine.arguments.contains("--measure-scan") {
+    exit(Diagnostics.measureProcessScan())
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--measure-taps") {
+    exit(Diagnostics.measureTapLoad(arguments: Array(CommandLine.arguments[(index + 1)...])))
+}
+
 if CommandLine.arguments.contains("--list-sessions") {
     Diagnostics.printAudioSessions()
     exit(EXIT_SUCCESS)

@@ -87,10 +87,14 @@ Full analysis, including the ranked alternatives and live API probes run on real
 - **Settings:** launch at login, menu bar icon, auto-open mixer, preferred output device,
   remember volumes, per-device levels, show inactive apps, call ducking and its level,
   low-latency processing, permission status, about.
-- **Low-latency processing**: processed apps ask the device for a 256-frame buffer (about 5 ms at
-  48 kHz), and every gain change glides over 250 ms so nothing clicks.
+- **Low-latency processing** (off by default): processed apps ask the device for a 256-frame
+  buffer instead of its own. It saves about 5 ms but doubles how often the audio thread wakes
+  (94 → 188 times a second per processed app), so it is opt-in. Gain changes glide over 250 ms
+  either way, so nothing clicks.
 - **Event-driven**: Core Audio property listeners plus a single scheduled wake-up, no polling.
-  Meters run at 20 Hz only while the panel is open. Idle taps stop their IO after 15 s.
+  A notification re-reads only the process it concerns (~0.9 ms), never the whole list. Meters run
+  at 20 Hz while the panel is open and something is being processed, otherwise 2 Hz. Idle taps stop
+  their IO after 15 s.
 
 ## Requirements
 
@@ -187,6 +191,9 @@ Good to know:
 - The first time you move an app off 100 %, there is a gap of about a tenth of a second while the
   tap engages. This happens once per app, not on every change.
 - Apps left at 100 % are not processed at all, so they have zero added latency.
+- Idle, with nothing turned down, the app uses about 0 % CPU and ~37 MB. Each processed app adds
+  roughly 0.2 % of one core while it is actually playing. `--measure-taps` and `--measure-scan`
+  report these on your own Mac.
 - Quitting Mac Volume Mixer instantly restores every app to normal — taps cannot outlive the app.
 
 ## Permissions

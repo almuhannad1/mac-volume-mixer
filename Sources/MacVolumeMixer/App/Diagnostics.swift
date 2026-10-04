@@ -56,6 +56,81 @@ enum Diagnostics {
         }
     }
 
+    /// `--measure-taps [count] [bufferFrames|device] [seconds]`: reports the CPU and wake-up cost
+    /// of running taps, so power reports can be answered with measurements.
+    static func measureTapLoad(arguments: [String]) -> Int32 {
+        let count = Int(arguments.first ?? "") ?? 1
+        let buffer: UInt32? = arguments.dropFirst().first.flatMap { $0 == "device" ? nil : UInt32($0) }
+        let seconds = Double(arguments.dropFirst(2).first ?? "") ?? 10
+
+        do {
+            let result = try TapLoadMeasurement.run(tapCount: count, bufferFrames: buffer, seconds: seconds)
+            let bufferLabel = buffer == nil ? "\(result.bufferFrames) (device default)" : "\(result.bufferFrames)"
+            print("""
+                \(result.tapCount) tap(s), buffer \(bufferLabel) frames at \(Int(result.sampleRate)) Hz                 over \(String(format: "%.1f", result.seconds)) s
+                  CPU                \(String(format: "%.2f", result.cpuPercent)) % of one core
+                  Wake-ups           \(String(format: "%.0f", result.wakeupsPerSecond)) /s                 (expected \(String(format: "%.0f", result.expectedCallbacksPerSecond)) realtime callbacks/s)
+                  Memory footprint   \(result.footprintBytes / 1_048_576) MB
+                """)
+            return EXIT_SUCCESS
+        } catch {
+            print("✘ Measurement failed: \(error)")
+            return EXIT_FAILURE
+        }
+    }
+
+    /// `--measure-scan`: how long one full audio-process enumeration takes. This runs on every
+    /// Core Audio notification, so it is the app's main non-realtime CPU cost.
+    static func measureProcessScan() -> Int32 {
+        let scan = TapLoadMeasurement.measureProcessScan()
+        print("HAL process scan:      \(String(format: "%.2f", scan.milliseconds)) ms for \(scan.processCount) audio processes")
+
+        let processes = AudioProcessMonitor.readProcesses()
+        let resolver = AppIdentityResolver(bundleInfo: BundleInfoReader.read)
+        let iterations = 20
+        let start = Date()
+        var sessions = 0
+        for _ in 0..<iterations {
+            sessions = AudioSessionGrouper.group(
+                processes, excludingPID: getpid(), ownBundleID: AppBundle.identifier, resolver: resolver
+            ).count
+        }
+        let grouping = Date().timeIntervalSince(start) / Double(iterations) * 1000
+        print("Identity + grouping:   \(String(format: "%.2f", grouping)) ms for \(sessions) sessions")
+        let volatileRefresh = TapLoadMeasurement.measureVolatileRefresh()
+        print("One object's volatile state: \(String(format: "%.2f", volatileRefresh)) ms")
+        print("""
+            Per notification: \(String(format: "%.2f", volatileRefresh + grouping)) ms now,             vs \(String(format: "%.2f", scan.milliseconds + grouping)) ms with a full rescan
+            """)
+        return EXIT_SUCCESS
+    }
+
+    /// `--watch-sessions [seconds]`: prints every change the process monitor reports, to verify
+    /// that incremental updates still track apps starting and stopping audio.
+    @MainActor
+    static func watchSessions(seconds: Double) -> Int32 {
+        let monitor = AudioProcessMonitor()
+        let resolver = AppIdentityResolver(bundleInfo: BundleInfoReader.read)
+        var changes = 0
+        let started = Date()
+
+        monitor.onChange = { processes in
+            changes += 1
+            let sessions = AudioSessionGrouper.group(
+                processes, excludingPID: getpid(), ownBundleID: AppBundle.identifier, resolver: resolver
+            )
+            let playing = sessions.filter(\.isProducingOutput).map(\.identity.displayName)
+            let elapsed = String(format: "%5.1fs", Date().timeIntervalSince(started))
+            print("[\(elapsed)] change \(changes): \(sessions.count) sessions, playing: "
+                + (playing.isEmpty ? "—" : playing.joined(separator: ", ")))
+        }
+        monitor.start()
+        print("Watching for \(Int(seconds))s…")
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        print("\(changes) change events in \(Int(seconds))s")
+        return EXIT_SUCCESS
+    }
+
     static func printAudioSessions() {
         print("Output devices")
         for device in AudioDeviceService.readOutputDevices() {

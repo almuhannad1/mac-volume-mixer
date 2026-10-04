@@ -18,6 +18,14 @@ final class AppIconProvider {
         return icon
     }
 
+    /// Drops icons for apps that are no longer listed. Icons are only resolved while the panel is
+    /// open, but without this the cache would keep an `NSImage` for every app that has ever played
+    /// a sound, for the lifetime of the app.
+    func prune(keeping appIDs: Set<String>) {
+        guard cache.count > appIDs.count else { return }
+        cache = cache.filter { appIDs.contains($0.key) }
+    }
+
     private func resolve(_ identity: AppIdentity) -> AppIcon {
         if let path = identity.bundlePath {
             return .image(NSWorkspace.shared.icon(forFile: path))

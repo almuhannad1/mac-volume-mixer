@@ -243,19 +243,25 @@ final class MixerController {
         }
     }
 
-    /// Re-probe on a backoff while capture is unavailable, so a login-time failure heals itself.
+    /// Re-probe on a bounded backoff while the check could not *run* — typically because Core
+    /// Audio has no default output device yet at login — so a startup race heals itself.
     ///
-    /// Only runs while the user has settings that need a tap: with nothing configured there is
-    /// nothing to apply, and an idle Mac should not be waking its output device every few minutes.
+    /// A *denied* permission is deliberately never retried on a timer. Every probe starts two
+    /// realtime IOProcs on the real output device and waits up to two seconds for the tone to
+    /// return, which wakes the audio hardware; repeating that forever would cost real battery for
+    /// a state only the user can change in System Settings. It is re-checked when they act
+    /// instead: opening the panel, pressing Check Again, touching a control, or plugging in a
+    /// device. The ladder is also finite, because a device appearing already triggers a check.
     private func scheduleCaptureRetry() {
         captureRetryTask?.cancel()
         captureRetryTask = nil
-        guard !isTapProcessingDisabled, captureAuthorization != .authorized,
-              !settingsStore.allSettings.isEmpty else {
+        guard !isTapProcessingDisabled, isUnavailable(captureAuthorization),
+              !settingsStore.allSettings.isEmpty,
+              captureRetryAttempt < Self.captureRetryDelays.count else {
             captureRetryAttempt = 0
             return
         }
-        let delay = Self.captureRetryDelays[min(captureRetryAttempt, Self.captureRetryDelays.count - 1)]
+        let delay = Self.captureRetryDelays[captureRetryAttempt]
         captureRetryAttempt += 1
         captureRetryTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -399,13 +405,15 @@ final class MixerController {
             sessions.first { $0.id == id }?.identity.displayName
         })
         let bufferFrames: UInt32? = preferences.lowLatencyProcessing ? Self.lowLatencyBufferFrames : nil
+        var duckedIDs: Set<String> = []
 
         for session in sessions {
             let id = session.id
             let setting = settingsStore.effectiveSetting(for: id, deviceUID: deviceUIDForLevels)
             let isSilencedBySolo = soloedAppID != nil && soloedAppID != id
-            let duckMultiplier = DuckPolicy.levelMultiplier(for: id, trigger: duckTrigger, level: preferences.duckLevel)
+            let duckMultiplier = DuckPolicy.levelMultiplier(for: session, trigger: duckTrigger, level: preferences.duckLevel)
             let isDucked = duckMultiplier < 1
+            if isDucked { duckedIDs.insert(id) }
             let gains = isSilencedBySolo
                 ? ChannelGains.silent
                 : VolumeCurve.channelGains(for: setting, scaledBy: duckMultiplier)
@@ -455,7 +463,7 @@ final class MixerController {
                 isPlaying: session.isProducingOutput,
                 isProcessing: engines[session.id] != nil,
                 failureMessage: engineFailures[session.id],
-                isDuckedByCall: duckTrigger != nil && duckTrigger != session.id,
+                isDuckedByCall: duckedIDs.contains(session.id),
                 routedDeviceName: route.name,
                 isRouteUnavailable: route.isUnavailable,
                 isSoloed: soloedAppID == session.id,

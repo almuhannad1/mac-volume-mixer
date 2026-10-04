@@ -26,7 +26,9 @@ final class MixerViewModel {
     @ObservationIgnored var openSettingsAction: () -> Void = {}
 
     private static let meterInterval: Duration = .milliseconds(50)
-    private static let permissionRecheckTicks = 80 // ≈ every 4 s while the panel is open
+    /// With nothing being metered there is nothing to animate, so the loop idles instead of waking
+    /// twenty times a second to read no meters at all.
+    private static let idleMeterInterval: Duration = .milliseconds(500)
 
     init(controller: MixerController) {
         self.controller = controller
@@ -77,20 +79,23 @@ final class MixerViewModel {
     private func startMeterLoop() {
         meterTask?.cancel()
         meterTask = Task { [weak self] in
-            var tick = 0
+            var listedIDs: Set<String> = []
             while !Task.isCancelled {
                 guard let self else { return }
                 let apps = controller.apps
+                var isMetering = false
                 for app in apps where app.isProcessing {
+                    isMetering = true
                     meters.update(appID: app.id, peak: controller.takePeak(for: app.id))
                 }
-                meters.prune(keeping: Set(apps.map(\.id)))
-
-                tick += 1
-                if tick % Self.permissionRecheckTicks == 0, controller.captureAuthorization == .notGranted {
-                    controller.recheckCaptureAuthorization()
+                // Pruning rebuilds both caches, so only do it when the list has really changed.
+                let ids = Set(apps.map(\.id))
+                if ids != listedIDs {
+                    listedIDs = ids
+                    meters.prune(keeping: ids)
+                    icons.prune(keeping: ids)
                 }
-                try? await Task.sleep(for: Self.meterInterval)
+                try? await Task.sleep(for: isMetering ? Self.meterInterval : Self.idleMeterInterval)
             }
         }
     }

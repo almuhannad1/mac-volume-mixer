@@ -31,4 +31,15 @@ public struct AudioProcessInfo: Hashable, Sendable {
         self.isRunningInput = isRunningInput
         self.outputDeviceIDs = outputDeviceIDs
     }
+
+    /// A copy with only the fields that can change while the process lives.
+    ///
+    /// `objectID`, `pid`, `bundleID` and `executablePath` are fixed for a given process object,
+    /// so re-reading them from the HAL on every notification is wasted work.
+    public func updating(isRunningOutput: Bool, isRunningInput: Bool, outputDeviceIDs: [UInt32]) -> AudioProcessInfo {
+        AudioProcessInfo(
+            objectID: objectID, pid: pid, bundleID: bundleID, executablePath: executablePath,
+            isRunningOutput: isRunningOutput, isRunningInput: isRunningInput, outputDeviceIDs: outputDeviceIDs
+        )
+    }
 }

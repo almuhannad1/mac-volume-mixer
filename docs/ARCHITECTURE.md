@@ -61,7 +61,7 @@ MixerCore has no Core Audio or AppKit imports, which is why it can be unit teste
 | `RoutePolicy` | MixerCore | Picks the device to render an app onto: pinned device → the app's own device → system default, reporting when a pinned device is missing. |
 | `TapPolicy` | MixerCore | When to tap — a changed level, a route (needed even at unity gain, since the audio must be re-rendered elsewhere) or a solo silencing the app — and when to run IO. |
 | `ActivityTracker` / `AppListFilter` | MixerCore | "Recently active" linger, inactive-app visibility, search matching. |
-| `AudioProcessMonitor` | AudioHAL | Listens to `kAudioHardwarePropertyProcessObjectList`, plus per-process `IsRunningOutput` and `Devices`. Coalesces events into one snapshot. |
+| `AudioProcessMonitor` | AudioHAL | Listens to `kAudioHardwarePropertyProcessObjectList`, plus per-process `IsRunningOutput`, `IsRunningInput` and `Devices`. Coalesces events into one snapshot per main-queue turn, and updates **incrementally**: immutable fields (pid, bundle ID, executable path) are read once per process object, so a notification costs ~0.9 ms instead of the ~13 ms a full rescan of 20 processes takes. |
 | `AudioDeviceService` | AudioHAL | Output device list and default output, via listeners. Hides devices with no output, hidden devices, and our own aggregate devices. |
 | `DeviceVolumeController` | AudioHAL | Master volume/mute of the default device. Uses `VirtualMainVolume` → main `VolumeScalar` → per-channel scalar fallback. |
 | `ProcessTapEngine` | AudioHAL | One per processed app. Owns a serial queue on which it creates, updates, starts, stops and destroys its `TapResources`. Gain and peak cross threads only through atomics. |
@@ -139,7 +139,11 @@ The render block is realtime-safe:
 - It does no allocation, locking, logging, ARC or Objective-C messaging.
 - The render thread glides toward the stored target gain by a bounded step per cycle (250 ms for
   the full range), so ducking, mute and slider drags all fade instead of clicking.
-- Processed devices are asked for a 256-frame buffer, clamped to what the device allows.
+- `TapResources` **owns** the `AtomicFloat` cells the block points into. Because the block holds
+  raw pointers rather than references, a caller releasing the last reference first would leave the
+  realtime thread reading freed memory — which corrupts the heap rather than failing cleanly.
+- Devices keep their own buffer size unless *Low-latency processing* is on, because halving the
+  buffer doubles the realtime callback rate.
 - Buffers the engine does not own are zeroed.
 
 ## Swift classes (by file)

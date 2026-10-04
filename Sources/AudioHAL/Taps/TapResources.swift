@@ -20,16 +20,23 @@ final class TapResources {
     private let muteBehavior: CATapMuteBehavior
     private let tapID: AudioObjectID
     private let aggregateID: AudioObjectID
+
+    /// The private aggregate device carrying this tap, for diagnostics such as load measurement.
+    var aggregateObjectID: AudioObjectID { aggregateID }
     private let ioProcID: AudioDeviceIOProcID
     /// Gain applied at the end of the previous render cycle. Written only by the IO thread
     /// while running, and only by the queue while stopped.
     private let rampGain: UnsafeMutablePointer<Float>
+    /// The atomic cells the render block reads. It holds *raw pointers* into them, so these
+    /// resources must own them: if the caller's references were released first, the realtime IO
+    /// thread would read freed memory and corrupt the heap.
+    private let cells: [AtomicFloat]
     private var isDestroyed = false
 
     private init(
         name: String, tapUUID: UUID, muteBehavior: CATapMuteBehavior, processObjectIDs: [AudioObjectID],
         outputDeviceUID: String, tapID: AudioObjectID, aggregateID: AudioObjectID,
-        ioProcID: AudioDeviceIOProcID, rampGain: UnsafeMutablePointer<Float>
+        ioProcID: AudioDeviceIOProcID, rampGain: UnsafeMutablePointer<Float>, cells: [AtomicFloat]
     ) {
         self.name = name
         self.tapUUID = tapUUID
@@ -40,6 +47,7 @@ final class TapResources {
         self.aggregateID = aggregateID
         self.ioProcID = ioProcID
         self.rampGain = rampGain
+        self.cells = cells
     }
 
     deinit {
@@ -127,7 +135,8 @@ final class TapResources {
                 """)
             return TapResources(
                 name: name, tapUUID: tapUUID, muteBehavior: muteBehavior, processObjectIDs: processObjectIDs,
-                outputDeviceUID: outputDeviceUID, tapID: tapID, aggregateID: aggregateID, ioProcID: ioProcID, rampGain: rampGain
+                outputDeviceUID: outputDeviceUID, tapID: tapID, aggregateID: aggregateID, ioProcID: ioProcID,
+                rampGain: rampGain, cells: [gainLeft, gainRight, monoFlag, peak]
             )
         } catch {
             rollback.reversed().forEach { $0() }

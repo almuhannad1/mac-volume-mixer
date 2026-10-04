@@ -18,6 +18,16 @@ public enum DuckPolicy {
     }
 
     /// Multiplier for one app's gain: the app on the call keeps its own level, the rest dip.
+    ///
+    /// Only apps that are **actually playing** and that the user can see are dimmed. Dimming
+    /// anything else would engage a tap — and with it a realtime IO thread waking a hundred times
+    /// a second — to turn down audio nobody is listening to.
+    public static func levelMultiplier(for session: AudioAppSession, trigger: String?, level: Double) -> Double {
+        guard session.identity.isUserFacing, session.isProducingOutput else { return 1 }
+        return levelMultiplier(for: session.id, trigger: trigger, level: level)
+    }
+
+    /// Multiplier by session ID alone, without the "is it worth a tap?" test above.
     public static func levelMultiplier(for sessionID: String, trigger: String?, level: Double) -> Double {
         guard let trigger, trigger != sessionID else { return 1 }
         return min(max(level, 0), 1)

@@ -9,14 +9,15 @@ scripts/test.sh
 Plain `swift test` also works where Xcode is installed. With only the Command Line Tools, SwiftPM
 may fail to find the swift-testing macro plugin; `scripts/test.sh` passes its path explicitly.
 
-48 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
+50 tests across 6 suites cover `MixerCore`: gain rendering (ramp, channel mapping, pre-gain peak),
 volume curve, meter scale and ballistics, atomics, app identity resolution (helper → owning app,
 WebKit, daemons), session grouping (including never listing the mixer itself), tap/visibility policies, activity tracking, search,
 persistence (round-trip, pruning, disabled persistence, corrupt data, clamping), per-app output
 routing (priority order, disconnected fallback, storage of a route at unity gain), per-device
 levels, backward compatibility with settings written by 1.0, call ducking (only user-facing apps
-trigger it; the app on the call keeps its own level), per-channel gains for balance and mono, and
-device filtering.
+trigger it; the app on the call keeps its own level; silent and non-user-facing apps are never
+dimmed, because that would engage a tap for nothing), incremental process updates preserving a
+process's immutable fields, per-channel gains for balance and mono, and device filtering.
 
 Core Audio, taps and the UI are **not** covered automatically: they need real hardware, the
 System Audio Recording permission and a person listening.
@@ -52,6 +53,62 @@ open -n "build/Mac Volume Mixer.app" --args --disable-taps
 
 Expect a menu bar icon, a working master slider, working output switching, the app list updating
 live, and a banner saying per-app volume is disabled.
+
+## Performance diagnostics
+
+These answer "is it using too much CPU, memory or battery?" with numbers rather than opinions.
+
+```bash
+.build/release/MacVolumeMixer --measure-scan
+```
+
+Times the two halves of a Core Audio notification. Expect roughly:
+
+```
+HAL process scan:      12.92 ms for 20 audio processes   # what a full rescan would cost
+Identity + grouping:   0.61 ms for 16 sessions
+One object's volatile state: 0.31 ms
+Per notification: 0.91 ms now, vs 13.52 ms with a full rescan
+```
+
+Notifications fire on every sound any app makes, so the per-notification figure is the app's main
+non-realtime cost. If it ever approaches the full-rescan figure, incremental updating has regressed.
+
+```bash
+.build/release/MacVolumeMixer --measure-taps <count> <bufferFrames|device> <seconds>
+```
+
+Runs `count` taps **on this process**, unmuted, so no other app is affected, and reports CPU,
+wake-ups per second and memory footprint. Wake-ups should match `sampleRate / bufferFrames × count`
+almost exactly; that figure, not CPU, is what drains a battery. Measured on an M3 Pro at 48 kHz:
+
+| Taps | Buffer | CPU | Wake-ups/s |
+|---|---|---|---|
+| 0 | — | 0.01 % | 1 |
+| 1 | 512 (device default) | 0.19 % | 94 |
+| 1 | 256 (low-latency) | 0.13 % | 188 |
+| 4 | 512 | 0.55 % | 377 |
+| 8 | 256 | 0.64 % | 1501 |
+
+This is also the fastest way to catch a realtime lifetime bug: the harness deliberately passes
+temporary `AtomicFloat` cells, so if `TapResources` ever stops owning them, several taps running
+for a few seconds will trap in `libmalloc` with "memory corruption of free block".
+
+```bash
+.build/release/MacVolumeMixer --watch-sessions 15
+```
+
+Prints every change the process monitor reports. Play a sound part-way through: expect the process
+to appear, then flip to playing, then disappear. Verifies that incremental updates still track
+apps starting and stopping audio.
+
+```bash
+top -l 2 -s 5 -pid $(pgrep -x MacVolumeMixer) -stats pid,cpu,th,mem,idlew,power
+```
+
+Idle with nothing turned down, expect ~0 % CPU, ~37 MB, 6 threads and only a couple of idle
+wake-ups a second. `footprint -p <pid>` also reports `phys_footprint_peak`, which is worth checking
+against a long-running session.
 
 ## Manual matrix (requires the permission)
 
@@ -100,13 +157,15 @@ Mac Volume Mixer, then press **Check Again**.
 | 19 | Deny the permission | Banner explains; master volume and device switching still work; **no app is left silent** |
 | 20 | Revoke the permission while running | Reopen the panel; the app must not leave apps muted (quit and relaunch if the banner appears) |
 | 21 | Leave the app running idle for an hour with the panel closed | CPU stays near 0 %; no growth in memory |
-| 29 | Log out and back in with an app configured below 100 % | The tap engages by itself; if Core Audio has no default device yet at login, the check retries (5 s, 15 s, 60 s, then every 5 min) until it succeeds — it must never stay inert for the session |
+| 29 | Log out and back in with an app configured below 100 % | The tap engages by itself; if Core Audio has no default device yet at login, the check retries at 5 s, 15 s, 60 s and 5 min, and a device appearing re-checks immediately — it must never stay inert for the session |
+| 36 | Deny the permission, then leave the app running for an hour with the panel closed | **No repeating probe.** `log stream` shows no further "self-test" lines, and the audio device is not woken every few minutes. Opening the panel or pressing Check Again probes once, on demand |
 | 30 | Hover the menu bar icon while access is missing | The tooltip says per-app volume needs System Audio Recording |
 | 31 | Play music, then start a Discord/Zoom/FaceTime call | Music fades down over ~250 ms, the panel says which app is on the call, and it fades back when the call ends |
 | 32 | Leave Siri or dictation listening while music plays | **Nothing dims** — system speech services hold the mic permanently and must never trigger ducking |
 | 33 | Start a call in the browser you are also playing music in | That app keeps its own level (it is the call), others dim |
 | 34 | Right-click an app → *Balance* → Left, then *Mono* | Audio moves to the left ear; mono folds both channels; both engage a tap even at 100 % |
-| 35 | Watch the log while an app is processed | `Buffer for <app> set to 256 frames`; turning off *Low-latency processing* restores the device default |
+| 35 | Turn on *Low-latency processing* and watch the log while an app is processed | `Buffer for <app> set to 256 frames`; with it off (the default) the device keeps its own buffer and no such line appears |
+| 37 | Start a call while several apps are listed but silent | Only apps **actually playing** show "Dimmed for a call" and gain a tap; silent rows are untouched (check with `--list-sessions` that no extra aggregate devices exist) |
 
 ### Assumptions worth confirming explicitly
 

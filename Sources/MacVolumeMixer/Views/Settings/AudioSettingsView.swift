@@ -57,7 +57,7 @@ struct AudioSettingsView: View {
             Section("Processing") {
                 Toggle(isOn: $preferences.lowLatencyProcessing) {
                     Text("Low-latency processing")
-                    Text("Asks the output device for a smaller buffer while an app is being processed. Turn this off if you hear crackling.")
+                    Text("Asks the output device for a smaller buffer while an app is being processed. Saves about 5 ms, but doubles how often the audio thread wakes, so it uses more battery.")
                 }
             }
 

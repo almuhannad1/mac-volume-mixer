@@ -60,6 +60,40 @@ struct PolicyTests {
         #expect(DuckPolicy.levelMultiplier(for: "brave", trigger: "discord", level: 5) == 1)
     }
 
+    /// Dimming an app that is silent, or one the user cannot see, would engage a tap and a
+    /// realtime IO thread to turn down audio nobody is hearing.
+    @Test func duckingOnlyTouchesAppsWorthATap() {
+        let playing = session("com.brave.Browser", playing: true)
+        #expect(DuckPolicy.levelMultiplier(for: playing, trigger: "discord", level: 0.3) == 0.3)
+
+        let silent = session("com.brave.Browser", playing: false)
+        #expect(DuckPolicy.levelMultiplier(for: silent, trigger: "discord", level: 0.3) == 1)
+
+        let daemon = session("com.apple.someDaemon", playing: true, kind: .process, path: nil)
+        #expect(DuckPolicy.levelMultiplier(for: daemon, trigger: "discord", level: 0.3) == 1)
+
+        // The app on the call keeps its own level even while playing.
+        let onCall = session("discord", playing: true)
+        #expect(DuckPolicy.levelMultiplier(for: onCall, trigger: "discord", level: 0.3) == 1)
+    }
+
+    /// A notification re-reads only the volatile properties, so the cached immutable ones must
+    /// survive untouched.
+    @Test func volatileUpdateKeepsImmutableFields() {
+        let original = AudioProcessInfo(objectID: 7, pid: 42, bundleID: "com.brave.Browser",
+                                        executablePath: "/Applications/Brave.app/Contents/MacOS/Brave",
+                                        isRunningOutput: false, isRunningInput: false, outputDeviceIDs: [])
+        let updated = original.updating(isRunningOutput: true, isRunningInput: true, outputDeviceIDs: [3])
+
+        #expect(updated.objectID == 7)
+        #expect(updated.pid == 42)
+        #expect(updated.bundleID == "com.brave.Browser")
+        #expect(updated.executablePath == original.executablePath)
+        #expect(updated.isRunningOutput)
+        #expect(updated.isRunningInput)
+        #expect(updated.outputDeviceIDs == [3])
+    }
+
     @Test func routeResolutionPrefersPinnedThenAppThenSystem() {
         let available: Set<String> = ["speakers", "airpods"]
         let pinned = RoutePolicy.resolve(pinnedDeviceUID: "airpods", availableDeviceUIDs: available,

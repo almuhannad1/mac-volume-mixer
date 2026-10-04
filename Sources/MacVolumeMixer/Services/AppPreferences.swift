@@ -68,8 +68,10 @@ final class AppPreferences {
         didSet { defaults.set(duckLevel, forKey: Key.duckLevel) }
     }
 
-    /// Ask the audio device for a smaller buffer while processing, trading a little headroom
-    /// for lower latency.
+    /// Ask the audio device for a smaller buffer while processing, trading battery for latency.
+    ///
+    /// Off by default: halving the buffer doubles the realtime callback rate (94 → 188 wake-ups a
+    /// second for every processed app), and the ~5 ms it saves is inaudible for volume control.
     var lowLatencyProcessing: Bool {
         didSet { defaults.set(lowLatencyProcessing, forKey: Key.lowLatencyProcessing) }
     }
@@ -84,7 +86,7 @@ final class AppPreferences {
             Key.scrollOnMenuBarIcon: true,
             Key.duckDuringCalls: true,
             Key.duckLevel: DuckPolicy.defaultLevel,
-            Key.lowLatencyProcessing: true,
+            Key.lowLatencyProcessing: false,
         ])
         self.defaults = defaults
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
